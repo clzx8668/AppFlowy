@@ -4,11 +4,13 @@ import 'package:app_containers/app_containers.dart';
 // sqlite3 也导出 Row，与 Flutter 的 Row 组件同名，这里隐藏掉
 import 'package:app_biz_store/app_biz_store.dart' hide Row;
 import 'package:app_crm_biz/app_crm_biz.dart';
+import 'package:app_diary_time/app_diary_time.dart';
 import 'package:app_flash_note/app_flash_note.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
+import 'package:appflowy/extensions/diary_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -134,11 +136,11 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                         ? () => _scaffoldKey.currentState?.openDrawer()
                         : null,
                   ),
-                _ComingSoonView(
-                  icon: Icons.calendar_month_outlined,
-                  title: '日历',
-                  description: '时间日记模块开发中\n这里将展示月历与每日日记',
-                  onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
+                _CalendarView(
+                  workspaceId: widget.workspaceId,
+                  userId: widget.userProfile.id,
+                  onOpenDrawer: () =>
+                      _scaffoldKey.currentState?.openDrawer(),
                 ),
                 _CrmView(
                   onOpenDrawer: () =>
@@ -352,6 +354,429 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
         ],
       ),
     );
+  }
+}
+
+/// 日历标签页：极简月历（iOS18 风格）+ 每日日记 + 生活元数据。
+///
+/// - 每天一篇内核文档（标题=日期），正文用内核编辑器写；
+/// - 心情/天气/位置存独立业务库，月历上以小色点标记；
+/// - 点某天＝打开（必要时创建）当天日记。
+class _CalendarView extends StatefulWidget {
+  const _CalendarView({
+    required this.workspaceId,
+    required this.userId,
+    this.onOpenDrawer,
+  });
+
+  final String workspaceId;
+  final Int64 userId;
+  final VoidCallback? onOpenDrawer;
+
+  @override
+  State<_CalendarView> createState() => _CalendarViewState();
+}
+
+class _CalendarViewState extends State<_CalendarView> {
+  DiaryService? _service;
+  bool _loading = true;
+  late DateTime _month;
+  late DateTime _selected;
+  Map<String, DiaryEntry> _entries = {};
+
+  @override
+  void initState() {
+    final now = DateTime.now();
+    _month = DateTime(now.year, now.month);
+    _selected = DateTime(now.year, now.month, now.day);
+    super.initState();
+    unawaited(_init());
+  }
+
+  Future<void> _init() async {
+    try {
+      final service = await createDiaryService(
+        workspaceId: widget.workspaceId,
+        userId: widget.userId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _service = service);
+      await _reload();
+    } catch (e) {
+      Log.error('[日记] 初始化失败：$e');
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _reload() async {
+    final service = _service;
+    if (service == null) {
+      return;
+    }
+    final entries = await service.entriesOfMonth(_month);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _entries = {for (final entry in entries) entry.dateKey: entry};
+      _loading = false;
+    });
+  }
+
+  Future<void> _openDiary(DateTime date) async {
+    final service = _service;
+    if (service == null) {
+      return;
+    }
+    try {
+      final entry = await service.openOrCreate(date);
+      await _reload();
+      final documentId = entry.documentId;
+      if (documentId != null && mounted) {
+        await openDocumentByViewId(context, documentId);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('打开日记失败：$e')));
+      }
+    }
+  }
+
+  Future<void> _pickMoodOrWeather({required bool mood}) async {
+    final service = _service;
+    if (service == null) {
+      return;
+    }
+    final options = mood ? kDiaryMoods : kDiaryWeathers;
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              mood ? '今天心情' : '今天天气',
+              style: Theme.of(sheetContext).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (final option in options)
+                  ActionChip(
+                    label: Text(
+                      '${option.$1} ${option.$2}',
+                      style: const TextStyle(fontSize: 15),
+                    ),
+                    onPressed: () =>
+                        Navigator.of(sheetContext).pop(option.$1),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || selected.isEmpty) {
+      return;
+    }
+    if (mood) {
+      await service.setMood(_selected, selected);
+    } else {
+      await service.setWeather(_selected, selected);
+    }
+    await _reload();
+  }
+
+  Future<void> _editLocation() async {
+    final service = _service;
+    if (service == null) {
+      return;
+    }
+    final controller = TextEditingController(
+      text: _entries[DiaryEntry.keyOf(_selected)]?.location ?? '',
+    );
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('地点'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '例如 济南 · 客户现场'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (value == null) {
+      return;
+    }
+    await service.setLocation(_selected, value);
+    await _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selectedEntry = _entries[DiaryEntry.keyOf(_selected)];
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: widget.onOpenDrawer,
+        ),
+        title: const Text('日历'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              final now = DateTime.now();
+              setState(() {
+                _month = DateTime(now.year, now.month);
+                _selected = DateTime(now.year, now.month, now.day);
+              });
+              unawaited(_reload());
+            },
+            child: const Text('今天'),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator.adaptive())
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+              children: [
+                // 月份大标题（iOS18 风格：大号、留白）
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${_month.year}年${_month.month}月',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: () {
+                        setState(() {
+                          _month = DateTime(_month.year, _month.month - 1);
+                        });
+                        unawaited(_reload());
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: () {
+                        setState(() {
+                          _month = DateTime(_month.year, _month.month + 1);
+                        });
+                        unawaited(_reload());
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _buildWeekHeader(theme),
+                const SizedBox(height: 4),
+                _buildMonthGrid(theme),
+                const SizedBox(height: 20),
+                _buildSelectedDayCard(theme, selectedEntry),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildWeekHeader(ThemeData theme) {
+    const labels = ['一', '二', '三', '四', '五', '六', '日'];
+    return Row(
+      children: [
+        for (final label in labels)
+          Expanded(
+            child: Center(
+              child: Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMonthGrid(ThemeData theme) {
+    final firstDay = DateTime(_month.year, _month.month);
+    // 周一为一周起点
+    final leading = (firstDay.weekday - DateTime.monday) % 7;
+    final daysInMonth = DateTime(_month.year, _month.month + 1, 0).day;
+    final today = DateTime.now();
+    final cells = <Widget>[];
+
+    for (var i = 0; i < leading; i++) {
+      cells.add(const SizedBox.shrink());
+    }
+    for (var day = 1; day <= daysInMonth; day++) {
+      final date = DateTime(_month.year, _month.month, day);
+      final key = DiaryEntry.keyOf(date);
+      final entry = _entries[key];
+      final isSelected = DiaryEntry.keyOf(_selected) == key;
+      final isToday = DiaryEntry.keyOf(today) == key;
+
+      cells.add(
+        GestureDetector(
+          onTap: () => setState(() => _selected = date),
+          onDoubleTap: () => unawaited(_openDiary(date)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isSelected
+                        ? theme.colorScheme.primary
+                        : (isToday
+                            ? theme.colorScheme.primaryContainer
+                            : Colors.transparent),
+                  ),
+                  child: Text(
+                    '$day',
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: isSelected
+                          ? theme.colorScheme.onPrimary
+                          : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: entry == null
+                        ? Colors.transparent
+                        : _moodColor(entry.mood, theme),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return GridView.count(
+      crossAxisCount: 7,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      childAspectRatio: 0.82,
+      children: cells,
+    );
+  }
+
+  Widget _buildSelectedDayCard(ThemeData theme, DiaryEntry? entry) {
+    return _RecordCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            DiaryEntry.keyOf(_selected),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ActionChip(
+                label: Text(
+                  entry == null || entry.mood.isEmpty
+                      ? '😊 记心情'
+                      : entry.mood,
+                  style: const TextStyle(fontSize: 15),
+                ),
+                onPressed: () => _pickMoodOrWeather(mood: true),
+              ),
+              ActionChip(
+                label: Text(
+                  entry == null || entry.weather.isEmpty
+                      ? '⛅ 记天气'
+                      : entry.weather,
+                  style: const TextStyle(fontSize: 15),
+                ),
+                onPressed: () => _pickMoodOrWeather(mood: false),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.place_outlined, size: 16),
+                label: Text(
+                  entry == null || entry.location.isEmpty
+                      ? '地点'
+                      : entry.location,
+                  style: const TextStyle(fontSize: 15),
+                ),
+                onPressed: _editLocation,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: () => _openDiary(_selected),
+              child: Text(
+                (entry?.hasDocument ?? false) ? '打开当天日记' : '写今天的日记',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 心情 → 月历色点颜色（低饱和，符合 iOS 风格）。
+  Color _moodColor(String mood, ThemeData theme) {
+    switch (mood) {
+      case '😄':
+        return const Color(0xFF34C759);
+      case '🙂':
+        return const Color(0xFF30B0C7);
+      case '😐':
+        return const Color(0xFF8E8E93);
+      case '😔':
+        return const Color(0xFF5E5CE6);
+      case '😡':
+        return const Color(0xFFFF3B30);
+      default:
+        return theme.colorScheme.primary.withValues(alpha: 0.7);
+    }
   }
 }
 
@@ -850,50 +1275,6 @@ class _EmptyHint extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ComingSoonView extends StatelessWidget {
-  const _ComingSoonView({
-    required this.icon,
-    required this.title,
-    required this.description,
-    this.onOpenDrawer,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-  final VoidCallback? onOpenDrawer;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: onOpenDrawer,
-        ),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 56, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 16),
-            Text(
-              description,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.outline,
-                height: 1.6,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
