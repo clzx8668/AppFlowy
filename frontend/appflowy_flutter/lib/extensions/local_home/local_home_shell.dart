@@ -1,7 +1,12 @@
 import 'dart:async';
 
 import 'package:app_containers/app_containers.dart';
+// sqlite3 也导出 Row，与 Flutter 的 Row 组件同名，这里隐藏掉
+import 'package:app_biz_store/app_biz_store.dart' hide Row;
+import 'package:app_crm_biz/app_crm_biz.dart';
 import 'package:app_flash_note/app_flash_note.dart';
+import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
+import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
@@ -135,11 +140,7 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                   description: '时间日记模块开发中\n这里将展示月历与每日日记',
                   onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
                 ),
-                _ContainerRecordsView(
-                  container: _containerOf(ContainerModule.crm),
-                  repository: _repository,
-                  title: 'CRM',
-                  showDrawerButton: true,
+                _CrmView(
                   onOpenDrawer: () =>
                       _scaffoldKey.currentState?.openDrawer(),
                 ),
@@ -1130,5 +1131,303 @@ class _FlashNoteRecordsViewState extends State<_FlashNoteRecordsView> {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${time.year}-${two(time.month)}-${two(time.day)} '
         '${two(time.hour)}:${two(time.minute)}';
+  }
+}
+
+/// CRM 标签页：客户档案（独立业务库）+ 阶段筛选 + 快录。
+///
+/// v0 覆盖：客户列表（卡片）、阶段筛选、新建客户、删除；
+/// 后续：跟进流水、客户 ↔ 知识库文档互链、统计漏斗。
+class _CrmView extends StatefulWidget {
+  const _CrmView({this.onOpenDrawer});
+
+  final VoidCallback? onOpenDrawer;
+
+  @override
+  State<_CrmView> createState() => _CrmViewState();
+}
+
+class _CrmViewState extends State<_CrmView> {
+  CrmRepository? _repository;
+  List<CrmCustomer> _customers = const [];
+  bool _loading = true;
+  String _stageFilter = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_init());
+  }
+
+  Future<void> _init() async {
+    try {
+      final baseDirectory = await getIt<ApplicationDataStorage>().getPath();
+      final database = await BusinessDatabase.open(
+        directory: baseDirectory,
+        migrations: kCrmMigrations,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _repository = CrmRepositoryImpl(database));
+      await _reload();
+    } catch (e) {
+      Log.error('[CRM] 初始化失败：$e');
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _reload() async {
+    final repository = _repository;
+    if (repository == null) {
+      return;
+    }
+    final customers = await repository.listCustomers(
+      stage: _stageFilter.isEmpty ? null : _stageFilter,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _customers = customers;
+      _loading = false;
+    });
+  }
+
+  Future<void> _createCustomer() async {
+    final repository = _repository;
+    if (repository == null) {
+      return;
+    }
+    final nameController = TextEditingController();
+    final companyController = TextEditingController();
+    var stage = _stageFilter.isEmpty ? kCrmStages.first : _stageFilter;
+
+    final created = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        // 保存动作：按钮与键盘"完成/回车"共用（部分机型系统手势会吞掉按钮点击）
+        Future<void> submit() async {
+          final name = nameController.text.trim();
+          if (name.isEmpty) {
+            return;
+          }
+          await repository.createCustomer(
+            name: name,
+            company: companyController.text.trim(),
+            stage: stage,
+          );
+          if (sheetContext.mounted) {
+            Navigator.of(sheetContext).pop(true);
+          }
+        }
+
+        return Padding(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 24,
+        ),
+        child: StatefulBuilder(
+          builder: (context, setSheetState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '新建客户',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => unawaited(submit()),
+                decoration: const InputDecoration(
+                  labelText: '客户姓名',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: companyController,
+                decoration: const InputDecoration(
+                  labelText: '公司 / 单位',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final option in kCrmStages)
+                    ChoiceChip(
+                      label: Text(option),
+                      selected: stage == option,
+                      onSelected: (_) =>
+                          setSheetState(() => stage = option),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => unawaited(submit()),
+                  child: const Text('保存'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      },
+    );
+    if (created ?? false) {
+      await _reload();
+    }
+  }
+
+  Future<void> _delete(CrmCustomer customer) async {
+    await _repository?.deleteCustomer(customer.id);
+    await _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: widget.onOpenDrawer,
+        ),
+        title: const Text('CRM'),
+        actions: [
+          IconButton(
+            tooltip: '新建客户',
+            icon: const Icon(Icons.person_add_alt),
+            onPressed: _createCustomer,
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _createCustomer,
+        icon: const Icon(Icons.add),
+        label: const Text('新建客户'),
+      ),
+      body: Column(
+        children: [
+          // 阶段筛选（iOS18 风格 chip 行）
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                for (final option in ['', ...kCrmStages])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8, top: 6),
+                    child: ChoiceChip(
+                      label: Text(option.isEmpty ? '全部' : option),
+                      selected: _stageFilter == option,
+                      onSelected: (_) {
+                        setState(() => _stageFilter = option);
+                        unawaited(_reload());
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator.adaptive())
+                : RefreshIndicator(
+                    onRefresh: _reload,
+                    child: _customers.isEmpty
+                        ? ListView(
+                            children: [
+                              SizedBox(
+                                height:
+                                    MediaQuery.of(context).size.height * 0.5,
+                                child: const _EmptyHint(containerName: 'CRM'),
+                              ),
+                            ],
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
+                            itemCount: _customers.length,
+                            itemBuilder: (context, index) {
+                              final customer = _customers[index];
+                              return _RecordCard(
+                                margin:
+                                    const EdgeInsets.symmetric(vertical: 4),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 18,
+                                      child: Text(
+                                        customer.name.isEmpty
+                                            ? '?'
+                                            : customer.name.characters.first,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            customer.name,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            [
+                                              if (customer.company.isNotEmpty)
+                                                customer.company,
+                                              if (customer.stage.isNotEmpty)
+                                                customer.stage,
+                                            ].join(' · '),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .outline,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        size: 20,
+                                      ),
+                                      onPressed: () => _delete(customer),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 }

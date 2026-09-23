@@ -7,7 +7,7 @@ const String kFlashNoteTable = 'flash_notes';
 
 /// 本模块向业务库注册的迁移。
 const List<BusinessMigration> kFlashNoteMigrations = [
-  BusinessMigration(1, [
+  BusinessMigration('flash_note', 1, [
     '''
     CREATE TABLE IF NOT EXISTS $kFlashNoteTable (
       id TEXT PRIMARY KEY,

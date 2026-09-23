@@ -19,10 +19,15 @@ import 'package:sqlite3/sqlite3.dart';
 export 'package:sqlite3/sqlite3.dart'
     show Database, Row, ResultSet, SqliteException;
 
-/// 一次 schema 迁移：版本号 + 该版本的建表/改表语句。
+/// 一次 schema 迁移：所属模块 + 模块内版本号 + 建表/改表语句。
+///
+/// 采用「按模块记录」的方式（见 `_biz_migrations` 表），
+/// 避免各业务模块都从 1 开始编号时互相覆盖（曾因此漏建 CRM 表）。
 class BusinessMigration {
-  const BusinessMigration(this.version, this.statements);
+  const BusinessMigration(this.module, this.version, this.statements);
 
+  /// 模块标识，例如 `flash_note` / `crm` / `diary`。
+  final String module;
   final int version;
   final List<String> statements;
 }
@@ -62,6 +67,9 @@ class BusinessDatabase {
   }) async {
     final existing = _instance;
     if (existing != null) {
+      // 业务库已经被打开过（例如闪念模块先初始化）：仍需应用本次传入的迁移，
+      // 否则后加载的模块（CRM/日记等）建表会被跳过。
+      _applyMigrations(existing._db, migrations);
       return existing;
     }
 
@@ -87,12 +95,23 @@ class BusinessDatabase {
     Database db,
     List<BusinessMigration> migrations,
   ) {
-    final currentVersion =
-        db.select('PRAGMA user_version;').first.values.first as int? ?? 0;
+    // 迁移记录表：按 (module, version) 记录已应用项
+    db.execute(
+      'CREATE TABLE IF NOT EXISTS _biz_migrations ('
+      'module TEXT NOT NULL, version INTEGER NOT NULL, '
+      'applied_at INTEGER NOT NULL, PRIMARY KEY (module, version));',
+    );
+    final applied = <String>{
+      for (final row in db.select('SELECT module, version FROM _biz_migrations;'))
+        '${row['module']}#${row['version']}',
+    };
     final ordered = migrations.toList()
-      ..sort((a, b) => a.version.compareTo(b.version));
+      ..sort((a, b) {
+        final byModule = a.module.compareTo(b.module);
+        return byModule != 0 ? byModule : a.version.compareTo(b.version);
+      });
     for (final migration in ordered) {
-      if (migration.version <= currentVersion) {
+      if (applied.contains('${migration.module}#${migration.version}')) {
         continue;
       }
       db.execute('BEGIN;');
@@ -100,7 +119,15 @@ class BusinessDatabase {
         for (final statement in migration.statements) {
           db.execute(statement);
         }
-        db.execute('PRAGMA user_version = ${migration.version};');
+        db.execute(
+          'INSERT OR REPLACE INTO _biz_migrations (module, version, applied_at) '
+          'VALUES (?, ?, ?);',
+          [
+            migration.module,
+            migration.version,
+            DateTime.now().millisecondsSinceEpoch,
+          ],
+        );
         db.execute('COMMIT;');
       } catch (e) {
         db.execute('ROLLBACK;');
