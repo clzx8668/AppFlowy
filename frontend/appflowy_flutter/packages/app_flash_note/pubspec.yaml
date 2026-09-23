@@ -10,8 +10,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # 独立业务库（与内核 Core 库分离，见 app_biz_store）
+  app_biz_store:
+    path: ../app_biz_store
   # 内核 API（创建/读取文档视图、日期解析、搜索）
   appflowy_backend:
     path: ../appflowy_backend
   appflowy_result:
     path: ../appflowy_result
+  nanoid: ^1.0.0

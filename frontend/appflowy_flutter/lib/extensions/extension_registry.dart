@@ -12,6 +12,8 @@
 /// 3. 视图插件：用 `registerPlugin(...)` 注册扩展包自有的 `PluginBuilder`；
 /// 4. AI：`getIt.registerFactory<AIRepository>(() => 自有实现)` 替换上游实现；
 /// 5. 入口：移动端悬浮速记/下拉新建、Windows 全局快捷键与侧边栏入口。
+///
+/// 另：业务数据统一走基础设施包 `app_biz_store`（独立 Sqlite，与内核 Core 库分离）。
 library;
 
 import 'package:app_ai_ext/app_ai_ext.dart';

@@ -13,16 +13,11 @@
 /// - 元数据（捕获时间、来源、标签、处理状态）写入业务库，正文仍在内核
 library app_flash_note;
 
+export 'src/flash_note.dart';
+export 'src/flash_note_repository.dart';
+export 'src/flash_note_service.dart';
+export 'src/pages/flash_note_capture_page.dart';
+export 'src/pages/flash_note_inbox_page.dart';
+
 /// 模块标识，用于日志与路由前缀。
 const String kAppFlashNotePackage = 'app_flash_note';
-
-/// 闪念捕获入口的抽象：由本包提供实现，App 层按平台调用。
-///
-/// 骨架阶段只定义契约，具体 UI（悬浮按钮/下拉/快捷键）在实现阶段补齐。
-abstract interface class FlashNoteCapture {
-  /// 立即打开速记入口；[initialText] 用于分享/剪贴板等外部带入。
-  Future<void> openQuickCapture({String? initialText});
-
-  /// 无需界面直接落一条闪念（供悬浮窗、快捷指令、自动化调用）。
-  Future<void> captureSilently(String text);
-}

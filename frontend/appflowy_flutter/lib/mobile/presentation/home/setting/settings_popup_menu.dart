@@ -1,5 +1,7 @@
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/env/local_first.dart';
+import 'package:appflowy/extensions/flash_note_entry.dart';
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/presentation.dart';
@@ -10,9 +12,11 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart'
     hide PopupMenuButton, PopupMenuDivider, PopupMenuItem, PopupMenuEntry;
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 enum _MobileSettingsPopupMenuItem {
+  flashNote,
   settings,
   members,
   trash,
@@ -43,6 +47,13 @@ class HomePageSettingsPopupMenu extends StatelessWidget {
       color: context.popupMenuBackgroundColor,
       itemBuilder: (BuildContext context) =>
           <PopupMenuEntry<_MobileSettingsPopupMenuItem>>[
+        // 二次开发：闪念速记入口（收件箱 + 快速捕获）
+        _buildItem(
+          value: _MobileSettingsPopupMenuItem.flashNote,
+          svg: FlowySvgs.m_notification_settings_s,
+          text: '闪念速记',
+        ),
+        const PopupMenuDivider(height: 0.5),
         _buildItem(
           value: _MobileSettingsPopupMenuItem.settings,
           svg: FlowySvgs.m_notification_settings_s,
@@ -79,8 +90,16 @@ class HomePageSettingsPopupMenu extends StatelessWidget {
           ),
         ],
       ],
-      onSelected: (_MobileSettingsPopupMenuItem value) {
+      onSelected: (_MobileSettingsPopupMenuItem value) async {
         switch (value) {
+          case _MobileSettingsPopupMenuItem.flashNote:
+            final workspaceState = context.read<UserWorkspaceBloc>().state;
+            await openFlashNoteInbox(
+              context,
+              workspaceId: workspaceState.currentWorkspace?.workspaceId ?? '',
+              userId: workspaceState.userProfile.id,
+            );
+            break;
           case _MobileSettingsPopupMenuItem.members:
             _openMembersPage(context);
             break;

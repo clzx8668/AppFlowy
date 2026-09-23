@@ -1,0 +1,16 @@
+name: app_biz_store
+description: AppFlowy 二次开发基础设施 —— 独立业务数据库（Sqlite，与内核 Core 库完全分离）
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.4"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 纯 Dart Sqlite 绑定 + 各平台原生库（Android/Windows/iOS 均可用）
+  sqlite3: ^2.4.0
+  sqlite3_flutter_libs: ^0.5.20
+  path: ^1.8.3

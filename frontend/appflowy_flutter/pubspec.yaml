@@ -14,6 +14,8 @@ dependencies:
   # 二次开发扩展包（自研业务模块，均为本地 path 依赖，见 doc/现有模块复用与扩展分析.md）
   app_ai_ext:
     path: packages/app_ai_ext
+  app_biz_store:
+    path: packages/app_biz_store
   app_crm_biz:
     path: packages/app_crm_biz
   app_diary_time:
