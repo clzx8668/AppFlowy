@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:app_containers/app_containers.dart';
+import 'package:app_flash_note/app_flash_note.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
+import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -104,18 +106,29 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
           : IndexedStack(
               index: _tabIndex,
               children: [
-                _ContainerRecordsView(
-                  key: ValueKey('home_${_homeContainer?.viewId}'),
-                  container: _homeContainer,
-                  repository: _repository,
-                  title: _homeContainer?.name ?? '首页',
-                  showDrawerButton: true,
-                  onOpenDrawer: () =>
-                      _scaffoldKey.currentState?.openDrawer(),
-                  onSwitchContainer: _containers.length > 1
-                      ? () => _scaffoldKey.currentState?.openDrawer()
-                      : null,
-                ),
+                // 闪念容器：直接渲染"闪念记录"（业务库），无需另一套收件箱 UI
+                if (_homeContainer?.module == ContainerModule.flashNote)
+                  _FlashNoteRecordsView(
+                    key: ValueKey('flash_${_homeContainer?.viewId}'),
+                    workspaceId: widget.workspaceId,
+                    userId: widget.userProfile.id,
+                    containerName: _homeContainer?.name ?? '闪念',
+                    onOpenDrawer: () =>
+                        _scaffoldKey.currentState?.openDrawer(),
+                  )
+                else
+                  _ContainerRecordsView(
+                    key: ValueKey('home_${_homeContainer?.viewId}'),
+                    container: _homeContainer,
+                    repository: _repository,
+                    title: _homeContainer?.name ?? '首页',
+                    showDrawerButton: true,
+                    onOpenDrawer: () =>
+                        _scaffoldKey.currentState?.openDrawer(),
+                    onSwitchContainer: _containers.length > 1
+                        ? () => _scaffoldKey.currentState?.openDrawer()
+                        : null,
+                  ),
                 _ComingSoonView(
                   icon: Icons.calendar_month_outlined,
                   title: '日历',
@@ -882,5 +895,240 @@ class _ComingSoonView extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 「闪念」容器的首页视图：直接展示闪念记录（业务库），并入捕获与整理动作。
+///
+/// 这样原来的独立"闪念收件箱"页不再是必需的（减少一套 UI）。
+class _FlashNoteRecordsView extends StatefulWidget {
+  const _FlashNoteRecordsView({
+    super.key,
+    required this.workspaceId,
+    required this.userId,
+    required this.containerName,
+    this.onOpenDrawer,
+  });
+
+  final String workspaceId;
+  final Int64 userId;
+  final String containerName;
+  final VoidCallback? onOpenDrawer;
+
+  @override
+  State<_FlashNoteRecordsView> createState() => _FlashNoteRecordsViewState();
+}
+
+class _FlashNoteRecordsViewState extends State<_FlashNoteRecordsView> {
+  FlashNoteService? _service;
+  List<FlashNote> _notes = const [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_init());
+  }
+
+  Future<void> _init() async {
+    try {
+      final service = await createFlashNoteService(
+        workspaceId: widget.workspaceId,
+        userId: widget.userId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _service = service);
+      await _reload();
+    } catch (e) {
+      Log.error('[闪念] 初始化失败：$e');
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _reload() async {
+    final service = _service;
+    if (service == null) {
+      return;
+    }
+    final notes = await service.inbox();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _notes = notes;
+      _loading = false;
+    });
+  }
+
+  Future<void> _capture() async {
+    final service = _service;
+    if (service == null) {
+      return;
+    }
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => FlashNoteCapturePage(service: service),
+      ),
+    );
+    if (saved ?? false) {
+      await _reload();
+    }
+  }
+
+  Future<void> _open(FlashNote note) async {
+    final service = _service;
+    if (service == null) {
+      return;
+    }
+    var target = note;
+    if (!note.hasDocument) {
+      try {
+        target = await service.promoteToDocument(note);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('转入知识库失败：$e')));
+        }
+        return;
+      }
+      await _reload();
+    }
+    final documentId = target.documentId;
+    if (documentId == null || !mounted) {
+      return;
+    }
+    await openDocumentByViewId(context, documentId);
+  }
+
+  Future<void> _archive(FlashNote note) async {
+    await _service?.archive(note);
+    await _reload();
+  }
+
+  Future<void> _delete(FlashNote note) async {
+    await _service?.delete(note);
+    await _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: widget.onOpenDrawer,
+        ),
+        title: Text(widget.containerName),
+        actions: [
+          IconButton(
+            tooltip: '闪念速记',
+            icon: const Icon(Icons.bolt),
+            onPressed: _capture,
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _capture,
+        icon: const Icon(Icons.add),
+        label: const Text('闪念'),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator.adaptive())
+          : RefreshIndicator(
+              onRefresh: _reload,
+              child: _notes.isEmpty
+                  ? ListView(
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          child: const _EmptyHint(containerName: '闪念'),
+                        ),
+                      ],
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+                      itemCount: _notes.length,
+                      itemBuilder: (context, index) {
+                        final note = _notes[index];
+                        return _RecordCard(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          onTap: () => _open(note),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      note.text,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      '${_formatTime(note.createdAt)} · '
+                                      '${note.hasDocument ? '已在知识库' : '仅记录'}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .outline,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_horiz, size: 20),
+                                onSelected: (value) async {
+                                  switch (value) {
+                                    case 'promote':
+                                      await _open(note);
+                                      break;
+                                    case 'archive':
+                                      await _archive(note);
+                                      break;
+                                    case 'delete':
+                                      await _delete(note);
+                                      break;
+                                  }
+                                },
+                                itemBuilder: (_) => [
+                                  if (!note.hasDocument)
+                                    const PopupMenuItem(
+                                      value: 'promote',
+                                      child: Text('转入知识库'),
+                                    ),
+                                  const PopupMenuItem(
+                                    value: 'archive',
+                                    child: Text('归档'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('删除'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${time.year}-${two(time.month)}-${two(time.day)} '
+        '${two(time.hour)}:${two(time.minute)}';
   }
 }

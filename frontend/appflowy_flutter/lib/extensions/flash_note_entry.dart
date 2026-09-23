@@ -52,6 +52,26 @@ Future<void> openFlashNoteInbox(
   );
 }
 
+/// 构建闪念服务（业务库 + 内核文档网关）。
+///
+/// 供首页「闪念」容器视图等复用；落点固定为「闪念」容器（不存在则自动创建）。
+Future<FlashNoteService> createFlashNoteService({
+  required String workspaceId,
+  required Int64 userId,
+}) async {
+  final baseDirectory = await getIt<ApplicationDataStorage>().getPath();
+  final database = await BusinessDatabase.open(
+    directory: baseDirectory,
+    migrations: kFlashNoteMigrations,
+  );
+  return FlashNoteService(
+    repository: FlashNoteRepository(database),
+    documentGateway: CoreFlashNoteDocumentGateway(
+      parentViewId: await _flashNoteContainerId(workspaceId, userId),
+    ),
+  );
+}
+
 /// 取「闪念」容器 id（不存在则创建），并顺带确保四个预设容器就绪。
 Future<String> _flashNoteContainerId(String workspaceId, Int64 userId) async {
   final repository = ContainerRepositoryImpl(
