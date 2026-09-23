@@ -55,7 +55,9 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
 
   Future<void> _load() async {
     try {
-      final containers = await _repository.ensureDefaultContainers();
+      // 先确保预设容器存在，再拉取全部容器（含用户在设置页/抽屉里新建的自定义容器）
+      await _repository.ensureDefaultContainers();
+      final containers = await _repository.listContainers();
       if (!mounted) {
         return;
       }
@@ -108,26 +110,33 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                   repository: _repository,
                   title: _homeContainer?.name ?? '首页',
                   showDrawerButton: true,
+                  onOpenDrawer: () =>
+                      _scaffoldKey.currentState?.openDrawer(),
                   onSwitchContainer: _containers.length > 1
                       ? () => _scaffoldKey.currentState?.openDrawer()
                       : null,
                 ),
-                const _ComingSoonView(
+                _ComingSoonView(
                   icon: Icons.calendar_month_outlined,
                   title: '日历',
                   description: '时间日记模块开发中\n这里将展示月历与每日日记',
+                  onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
                 ),
                 _ContainerRecordsView(
                   container: _containerOf(ContainerModule.crm),
                   repository: _repository,
                   title: 'CRM',
                   showDrawerButton: true,
+                  onOpenDrawer: () =>
+                      _scaffoldKey.currentState?.openDrawer(),
                 ),
                 _ContainerRecordsView(
                   container: _containerOf(ContainerModule.ai),
                   repository: _repository,
                   title: 'AI',
                   showDrawerButton: true,
+                  onOpenDrawer: () =>
+                      _scaffoldKey.currentState?.openDrawer(),
                 ),
                 _buildSettingsTab(context),
               ],
@@ -340,6 +349,7 @@ class _ContainerRecordsView extends StatefulWidget {
     required this.repository,
     required this.title,
     this.showDrawerButton = false,
+    this.onOpenDrawer,
     this.onSwitchContainer,
   });
 
@@ -347,6 +357,9 @@ class _ContainerRecordsView extends StatefulWidget {
   final ContainerRepositoryImpl repository;
   final String title;
   final bool showDrawerButton;
+
+  /// 打开外层（LocalHomeShell）的抽屉。
+  final VoidCallback? onOpenDrawer;
   final VoidCallback? onSwitchContainer;
 
   @override
@@ -356,6 +369,9 @@ class _ContainerRecordsView extends StatefulWidget {
 class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
   List<ViewPB> _records = const [];
   bool _loading = true;
+
+  /// 记录视图形态：列表 / 网格 / 时间线（iOS18 风格轻量切换）。
+  _RecordViewMode _mode = _RecordViewMode.list;
 
   @override
   void initState() {
@@ -456,11 +472,9 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
     return Scaffold(
       appBar: AppBar(
         leading: widget.showDrawerButton
-            ? Builder(
-                builder: (context) => IconButton(
-                  icon: const Icon(Icons.menu),
-                  onPressed: () => Scaffold.of(context).openDrawer(),
-                ),
+            ? IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: widget.onOpenDrawer,
               )
             : null,
         title: widget.onSwitchContainer == null
@@ -476,6 +490,31 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
                 ),
               ),
         actions: [
+          PopupMenuButton<_RecordViewMode>(
+            tooltip: '视图样式',
+            icon: Icon(
+              switch (_mode) {
+                _RecordViewMode.list => Icons.view_list_outlined,
+                _RecordViewMode.grid => Icons.grid_view_outlined,
+                _RecordViewMode.timeline => Icons.timeline_outlined,
+              },
+            ),
+            onSelected: (mode) => setState(() => _mode = mode),
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: _RecordViewMode.list,
+                child: Text('列表'),
+              ),
+              PopupMenuItem(
+                value: _RecordViewMode.grid,
+                child: Text('网格'),
+              ),
+              PopupMenuItem(
+                value: _RecordViewMode.timeline,
+                child: Text('时间线'),
+              ),
+            ],
+          ),
           if (container != null)
             IconButton(
               tooltip: '新建',
@@ -504,25 +543,217 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
                         ),
                       ],
                     )
-                  : ListView.separated(
-                      padding: const EdgeInsets.only(bottom: 88),
-                      itemCount: _records.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final view = _records[index];
-                        return ListTile(
-                          title: Text(
-                            view.name.isEmpty ? '未命名页面' : view.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(_formatTime(view)),
-                          onTap: () => _open(view),
-                        );
-                      },
-                    ),
+                  : switch (_mode) {
+                      _RecordViewMode.list => _buildList(),
+                      _RecordViewMode.grid => _buildGrid(),
+                      _RecordViewMode.timeline => _buildTimeline(),
+                    },
             ),
     );
+  }
+
+  // ------------------------------------------------------------ 列表样式
+
+  Widget _buildList() {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+      itemCount: _records.length,
+      itemBuilder: (context, index) {
+        final view = _records[index];
+        return _RecordCard(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          onTap: () => _open(view),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _titleOf(view),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        height: 1.35,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _formatTime(view),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ------------------------------------------------------------ 网格样式
+
+  Widget _buildGrid() {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.35,
+      ),
+      itemCount: _records.length,
+      itemBuilder: (context, index) {
+        final view = _records[index];
+        return _RecordCard(
+          onTap: () => _open(view),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  _titleOf(view),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 15, height: 1.4),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _formatTime(view),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------- 时间线样式
+
+  Widget _buildTimeline() {
+    final theme = Theme.of(context);
+    String? lastDay;
+    final children = <Widget>[];
+    for (final view in _records) {
+      final day = _dayOf(view);
+      if (day != lastDay) {
+        lastDay = day;
+        children.add(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 16, 4, 6),
+            child: Text(
+              day,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
+        );
+      }
+      children.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 左侧时间轴：圆点 + 连线
+              Column(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    margin: const EdgeInsets.only(top: 8),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: theme.colorScheme.primary.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 44,
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _RecordCard(
+                  onTap: () => _open(view),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _titleOf(view),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 15, height: 1.35),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _timeOfDay(view),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
+      children: children,
+    );
+  }
+
+  String _titleOf(ViewPB view) =>
+      view.name.isEmpty ? '未命名页面' : view.name;
+
+  DateTime? _timeOf(ViewPB view) {
+    final timestamp = _sortKey(view);
+    if (timestamp == Int64.ZERO) {
+      return null;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(timestamp.toInt() * 1000);
+  }
+
+  String _dayOf(ViewPB view) {
+    final time = _timeOf(view);
+    if (time == null) {
+      return '未知时间';
+    }
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${time.year}-${two(time.month)}-${two(time.day)}';
+  }
+
+  String _timeOfDay(ViewPB view) {
+    final time = _timeOf(view);
+    if (time == null) {
+      return '';
+    }
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(time.hour)}:${two(time.minute)}';
   }
 
   String _formatTime(ViewPB view) {
@@ -540,6 +771,42 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
   /// 排序/展示用的时间戳：优先最后编辑时间，其次创建时间。
   Int64 _sortKey(ViewPB view) {
     return view.lastEdited == Int64.ZERO ? view.createTime : view.lastEdited;
+  }
+}
+
+/// 记录视图形态。
+enum _RecordViewMode { list, grid, timeline }
+
+/// iOS18 风格的记录卡片：大圆角、低饱和表面色、无重边框。
+class _RecordCard extends StatelessWidget {
+  const _RecordCard({
+    required this.child,
+    this.onTap,
+    this.margin = EdgeInsets.zero,
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final EdgeInsets margin;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: margin,
+      child: Material(
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: child,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -579,11 +846,13 @@ class _ComingSoonView extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.description,
+    this.onOpenDrawer,
   });
 
   final IconData icon;
   final String title;
   final String description;
+  final VoidCallback? onOpenDrawer;
 
   @override
   Widget build(BuildContext context) {
@@ -592,7 +861,7 @@ class _ComingSoonView extends StatelessWidget {
         title: Text(title),
         leading: IconButton(
           icon: const Icon(Icons.menu),
-          onPressed: () => Scaffold.of(context).openDrawer(),
+          onPressed: onOpenDrawer,
         ),
       ),
       body: Center(
