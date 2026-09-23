@@ -1,0 +1,12 @@
+name: app_containers
+description: AppFlowy 二次开发基础设施 —— 预设容器（闪念/笔记/CRM/AI）与容器契约
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.4"
+
+dependencies:
+  flutter:
+    sdk: flutter

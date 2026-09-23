@@ -16,6 +16,8 @@ dependencies:
     path: packages/app_ai_ext
   app_biz_store:
     path: packages/app_biz_store
+  app_containers:
+    path: packages/app_containers
   app_crm_biz:
     path: packages/app_crm_biz
   app_diary_time:

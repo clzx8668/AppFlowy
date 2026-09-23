@@ -1,5 +1,7 @@
 import 'package:app_biz_store/app_biz_store.dart';
+import 'package:app_containers/app_containers.dart';
 import 'package:app_flash_note/app_flash_note.dart';
+import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/adapters/flash_note_document_gateway_impl.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -28,9 +30,9 @@ Future<void> openFlashNoteInbox(
   );
   final service = FlashNoteService(
     repository: FlashNoteRepository(database),
+    // 记录统一落到「闪念」容器下（容器首次使用自动创建）
     documentGateway: CoreFlashNoteDocumentGateway(
-      workspaceId: workspaceId,
-      userId: userId,
+      parentViewId: await _flashNoteContainerId(workspaceId, userId),
     ),
   );
 
@@ -48,6 +50,21 @@ Future<void> openFlashNoteInbox(
       ),
     ),
   );
+}
+
+/// 取「闪念」容器 id（不存在则创建），并顺带确保四个预设容器就绪。
+Future<String> _flashNoteContainerId(String workspaceId, Int64 userId) async {
+  final repository = ContainerRepositoryImpl(
+    workspaceId: workspaceId,
+    userId: userId,
+  );
+  final containers = await repository.ensureDefaultContainers();
+  return containers
+      .firstWhere(
+        (container) => container.module == ContainerModule.flashNote,
+        orElse: () => containers.first,
+      )
+      .viewId;
 }
 
 /// 按 view id 打开内核页面（移动端 pushView，桌面端开 tab）。
