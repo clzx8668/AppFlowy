@@ -46,6 +46,34 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
+  app_ai_ext:
+    dependency: "direct main"
+    description:
+      path: "packages/app_ai_ext"
+      relative: true
+    source: path
+    version: "0.0.1"
+  app_crm_biz:
+    dependency: "direct main"
+    description:
+      path: "packages/app_crm_biz"
+      relative: true
+    source: path
+    version: "0.0.1"
+  app_diary_time:
+    dependency: "direct main"
+    description:
+      path: "packages/app_diary_time"
+      relative: true
+    source: path
+    version: "0.0.1"
+  app_flash_note:
+    dependency: "direct main"
+    description:
+      path: "packages/app_flash_note"
+      relative: true
+    source: path
+    version: "0.0.1"
   app_links:
     dependency: "direct main"
     description:
@@ -78,6 +106,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.4"
+  app_webdav_sync:
+    dependency: "direct main"
+    description:
+      path: "packages/app_webdav_sync"
+      relative: true
+    source: path
+    version: "0.0.1"
   appflowy_backend:
     dependency: "direct main"
     description:

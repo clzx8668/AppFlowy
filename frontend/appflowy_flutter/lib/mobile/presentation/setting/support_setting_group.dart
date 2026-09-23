@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/env/local_first.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/show_mobile_bottom_sheet.dart';
 import 'package:appflowy/mobile/presentation/setting/widgets/mobile_setting_trailing.dart';
@@ -29,33 +30,36 @@ class SupportSettingGroup extends StatelessWidget {
       builder: (context, snapshot) => MobileSettingGroup(
         groupTitle: LocaleKeys.settings_mobile_support.tr(),
         settingItemList: [
-          MobileSettingItem(
-            name: LocaleKeys.settings_mobile_joinDiscord.tr(),
-            trailing: MobileSettingTrailing(
-              text: '',
+          // 二次开发：本地优先模式下移除社区与上游 Issues 入口（Discord / AppFlowy-IO GitHub）
+          if (!kLocalFirstMode) ...[
+            MobileSettingItem(
+              name: LocaleKeys.settings_mobile_joinDiscord.tr(),
+              trailing: MobileSettingTrailing(
+                text: '',
+              ),
+              onTap: () => afLaunchUrlString('https://discord.gg/JucBXeU2FE'),
             ),
-            onTap: () => afLaunchUrlString('https://discord.gg/JucBXeU2FE'),
-          ),
-          MobileSettingItem(
-            name: LocaleKeys.workspace_errorActions_reportIssue.tr(),
-            trailing: MobileSettingTrailing(
-              text: '',
+            MobileSettingItem(
+              name: LocaleKeys.workspace_errorActions_reportIssue.tr(),
+              trailing: MobileSettingTrailing(
+                text: '',
+              ),
+              onTap: () {
+                showMobileBottomSheet(
+                  context,
+                  showDragHandle: true,
+                  showHeader: true,
+                  title: LocaleKeys.workspace_errorActions_reportIssue.tr(),
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  builder: (context) {
+                    return _ReportIssuesWidget(
+                      version: snapshot.data?.version ?? '',
+                    );
+                  },
+                );
+              },
             ),
-            onTap: () {
-              showMobileBottomSheet(
-                context,
-                showDragHandle: true,
-                showHeader: true,
-                title: LocaleKeys.workspace_errorActions_reportIssue.tr(),
-                backgroundColor: Theme.of(context).colorScheme.surface,
-                builder: (context) {
-                  return _ReportIssuesWidget(
-                    version: snapshot.data?.version ?? '',
-                  );
-                },
-              );
-            },
-          ),
+          ],
           MobileSettingItem(
             name: LocaleKeys.settings_files_clearCache.tr(),
             trailing: MobileSettingTrailing(

@@ -3,6 +3,7 @@ import 'package:appflowy/plugins/database/calendar/calendar.dart';
 import 'package:appflowy/plugins/database/board/board.dart';
 import 'package:appflowy/plugins/database/grid/grid.dart';
 import 'package:appflowy/plugins/database_document/database_document_plugin.dart';
+import 'package:appflowy/extensions/extension_registry.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
@@ -40,5 +41,8 @@ class PluginLoadTask extends LaunchTask {
       builder: AIChatPluginBuilder(),
       config: AIChatPluginConfig(),
     );
+
+    // 二次开发：登记自研扩展包（闪念/日记/CRM/WebDAV 同步/AI 扩展）。
+    ExtensionRegistry.registerAll();
   }
 }

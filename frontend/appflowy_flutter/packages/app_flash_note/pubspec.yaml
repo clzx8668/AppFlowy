@@ -1,0 +1,17 @@
+name: app_flash_note
+description: AppFlowy 二次开发扩展包 —— 闪念速记（灵感极速捕获、零负担记录）
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.4"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 内核 API（创建/读取文档视图、日期解析、搜索）
+  appflowy_backend:
+    path: ../appflowy_backend
+  appflowy_result:
+    path: ../appflowy_result

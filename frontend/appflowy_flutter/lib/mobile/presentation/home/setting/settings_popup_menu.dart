@@ -1,4 +1,5 @@
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/env/local_first.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/presentation.dart';
@@ -62,18 +63,21 @@ class HomePageSettingsPopupMenu extends StatelessWidget {
           svg: FlowySvgs.trash_s,
           text: LocaleKeys.settings_popupMenuItem_trash.tr(),
         ),
-        const PopupMenuDivider(height: 0.5),
-        _buildItem(
-          value: _MobileSettingsPopupMenuItem.helpAndDocumentation,
-          svg: FlowySvgs.help_and_documentation_s,
-          text: LocaleKeys.settings_popupMenuItem_helpAndDocumentation.tr(),
-        ),
-        const PopupMenuDivider(height: 0.5),
-        _buildItem(
-          value: _MobileSettingsPopupMenuItem.help,
-          svg: FlowySvgs.message_support_s,
-          text: LocaleKeys.settings_popupMenuItem_getSupport.tr(),
-        ),
+        // 二次开发：本地优先模式下移除外部帮助文档与社区支持入口
+        if (!kLocalFirstMode) ...[
+          const PopupMenuDivider(height: 0.5),
+          _buildItem(
+            value: _MobileSettingsPopupMenuItem.helpAndDocumentation,
+            svg: FlowySvgs.help_and_documentation_s,
+            text: LocaleKeys.settings_popupMenuItem_helpAndDocumentation.tr(),
+          ),
+          const PopupMenuDivider(height: 0.5),
+          _buildItem(
+            value: _MobileSettingsPopupMenuItem.help,
+            svg: FlowySvgs.message_support_s,
+            text: LocaleKeys.settings_popupMenuItem_getSupport.tr(),
+          ),
+        ],
       ],
       onSelected: (_MobileSettingsPopupMenuItem value) {
         switch (value) {

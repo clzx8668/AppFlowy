@@ -1,0 +1,16 @@
+name: app_crm_biz
+description: AppFlowy 二次开发扩展包 —— 私有化 CRM（客户档案、拜访跟进、销售记忆沉淀）
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.4"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  appflowy_backend:
+    path: ../appflowy_backend
+  appflowy_result:
+    path: ../appflowy_result

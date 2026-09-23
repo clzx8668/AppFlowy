@@ -1,4 +1,5 @@
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/env/local_first.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/setting/widgets/mobile_setting_trailing.dart';
 import 'package:appflowy/startup/tasks/device_info_task.dart';
@@ -20,20 +21,23 @@ class AboutSettingGroup extends StatelessWidget {
     return MobileSettingGroup(
       groupTitle: LocaleKeys.settings_mobile_about.tr(),
       settingItemList: [
-        MobileSettingItem(
-          name: LocaleKeys.settings_mobile_privacyPolicy.tr(),
-          trailing: MobileSettingTrailing(
-            text: '',
+        // 二次开发：本地优先模式下移除指向 appflowy.com 的隐私政策/条款外链
+        if (!kLocalFirstMode) ...[
+          MobileSettingItem(
+            name: LocaleKeys.settings_mobile_privacyPolicy.tr(),
+            trailing: MobileSettingTrailing(
+              text: '',
+            ),
+            onTap: () => afLaunchUrlString('https://appflowy.com/privacy'),
           ),
-          onTap: () => afLaunchUrlString('https://appflowy.com/privacy'),
-        ),
-        MobileSettingItem(
-          name: LocaleKeys.settings_mobile_termsAndConditions.tr(),
-          trailing: MobileSettingTrailing(
-            text: '',
+          MobileSettingItem(
+            name: LocaleKeys.settings_mobile_termsAndConditions.tr(),
+            trailing: MobileSettingTrailing(
+              text: '',
+            ),
+            onTap: () => afLaunchUrlString('https://appflowy.com/terms'),
           ),
-          onTap: () => afLaunchUrlString('https://appflowy.com/terms'),
-        ),
+        ],
         if (kDebugMode)
           MobileSettingItem(
             name: 'Feature Flags',

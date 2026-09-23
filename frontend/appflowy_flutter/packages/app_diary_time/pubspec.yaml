@@ -1,0 +1,16 @@
+name: app_diary_time
+description: AppFlowy 二次开发扩展包 —— 时间日记体系（月历回溯、每日日记、生活元数据块）
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.4"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  appflowy_backend:
+    path: ../appflowy_backend
+  appflowy_result:
+    path: ../appflowy_result

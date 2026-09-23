@@ -1,0 +1,16 @@
+name: app_ai_ext
+description: AppFlowy 二次开发扩展包 —— AI 扩展（自有模型接入 + 记忆体系编排）
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.4"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  appflowy_backend:
+    path: ../appflowy_backend
+  appflowy_result:
+    path: ../appflowy_result

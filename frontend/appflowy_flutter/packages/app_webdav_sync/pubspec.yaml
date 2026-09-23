@@ -1,0 +1,22 @@
+name: app_webdav_sync
+description: AppFlowy 二次开发扩展包 —— WebDAV 快照同步（双库+附件版本化，替代 AppFlowy Cloud）
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.4"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 快照打包已在上游依赖里（zip）
+  archive: ^3.4.10
+  # WebDAV 走 HTTP 方法（PROPFIND/PUT/GET/MKCOL）
+  http: ^1.0.0
+  path: ^1.8.3
+  crypto: ^3.0.3
+  appflowy_backend:
+    path: ../appflowy_backend
+  appflowy_result:
+    path: ../appflowy_result

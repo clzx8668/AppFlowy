@@ -11,6 +11,17 @@ environment:
   sdk: ">=3.3.0 <4.0.0"
 
 dependencies:
+  # 二次开发扩展包（自研业务模块，均为本地 path 依赖，见 doc/现有模块复用与扩展分析.md）
+  app_ai_ext:
+    path: packages/app_ai_ext
+  app_crm_biz:
+    path: packages/app_crm_biz
+  app_diary_time:
+    path: packages/app_diary_time
+  app_flash_note:
+    path: packages/app_flash_note
+  app_webdav_sync:
+    path: packages/app_webdav_sync
   any_date: ^1.0.4
   app_links: ^6.3.3
   appflowy_backend:
