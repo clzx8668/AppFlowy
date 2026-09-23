@@ -1,7 +1,6 @@
-import 'dart:async';
-
+import 'package:appflowy/env/local_first.dart';
 import 'package:appflowy/features/workspace/data/repositories/rust_workspace_repository_impl.dart';
-import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
+import 'package:appflowy/extensions/local_home/local_home_shell.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_page_header.dart';
 import 'package:appflowy/mobile/presentation/home/tab/mobile_space_tab.dart';
@@ -68,14 +67,14 @@ class MobileHomeScreen extends StatelessWidget {
           return const WorkspaceFailedScreen();
         }
 
-        // 二次开发：本地优先模式下，首页出现即确保预设容器（闪念/笔记/CRM/AI）就绪。
-        // 幂等：已存在的容器直接复用，不会重复创建。
-        unawaited(
-          ContainerRepositoryImpl(
+        // 二次开发：本地优先模式改用自研首页（抽屉 + 五项导航 + 容器内容视图）。
+        // 容器初始化在 LocalHomeShell 内完成（幂等）。
+        if (kLocalFirstMode) {
+          return LocalHomeShell(
+            userProfile: userProfile,
             workspaceId: workspaceLatest.workspaceId,
-            userId: userProfile.id,
-          ).ensureDefaultContainers(),
-        );
+          );
+        }
 
         return Scaffold(
           body: SafeArea(

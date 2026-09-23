@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:appflowy/env/local_first.dart';
 import 'package:appflowy/mobile/presentation/chat/mobile_chat_screen.dart';
 import 'package:appflowy/mobile/presentation/database/board/mobile_board_screen.dart';
 import 'package:appflowy/mobile/presentation/database/card/card.dart';
@@ -140,6 +141,11 @@ StatefulShellRoute _mobileHomeScreenWithNavigationBarRoute() {
       // using a BottomNavigationBar). The StatefulNavigationShell is passed
       // to be able access the state of the shell and to navigate to other
       // branches in a stateful way.
+      // 二次开发：本地优先模式的底部导航由自研首页（LocalHomeShell）承担，
+      // 这里不再叠加上游底栏，避免出现两条导航栏。
+      if (kLocalFirstMode) {
+        return navigationShell;
+      }
       return MobileBottomNavigationBar(navigationShell: navigationShell);
     },
     pageBuilder: (context, state, navigationShell) {
@@ -159,7 +165,10 @@ StatefulShellRoute _mobileHomeScreenWithNavigationBarRoute() {
           break;
       }
       return MaterialExtendedPage(
-        child: MobileBottomNavigationBar(navigationShell: navigationShell),
+        // 二次开发：本地优先模式不再叠加上游底栏（底部导航由 LocalHomeShell 承担）
+        child: kLocalFirstMode
+            ? navigationShell
+            : MobileBottomNavigationBar(navigationShell: navigationShell),
         name: name,
       );
     },
