@@ -27,7 +27,7 @@ class ContainerRepositoryImpl implements ContainerRepository {
 
   @override
   Future<List<ModuleContainer>> listContainers() async {
-    final result = await _service.getPrivateViews();
+    final result = await _service.getPublicViews();
     final views = result.toNullable() ?? const <ViewPB>[];
     final containers = <ModuleContainer>[];
     for (final view in views) {
@@ -93,7 +93,9 @@ class ContainerRepositoryImpl implements ContainerRepository {
     });
     final result = await _service.createView(
       name: name,
-      viewSection: ViewSectionPB.Private,
+      // 注意：移动端首页列表渲染的是 **Public** 分区（手机端「+」新建页面用的也是 Public），
+      // 容器若建在 Private 分区不会出现在页面列表里 —— 这里必须与上游一致。
+      viewSection: ViewSectionPB.Public,
       extra: extra,
     );
     return result.fold(
