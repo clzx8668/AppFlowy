@@ -30,9 +30,24 @@ echo "==> cargo ndk build (arm64-v8a)"
 cargo ndk -t arm64-v8a -o ./jniLibs rustc --crate-type cdylib \
   --features "dart,openssl_vendored" --package=dart-ffi
 
+# 注意：不要清空 jniLibs 目录。android/app/src/main/CMakeLists.txt 会在 configure 阶段
+# 往同目录拷贝 libc++_shared.so，libdart_ffi.so 依赖它（缺失会导致真机 dlopen 失败：
+# "library libc++_shared.so not found"）。这里只覆盖我们自己的内核产物。
 echo "==> 回填 jniLibs"
-mkdir -p "$JNI_DST"
-rm -rf "${JNI_DST:?}/arm64-v8a"
-cp -r "$JNI_SRC/arm64-v8a" "$JNI_DST/"
+mkdir -p "$JNI_DST/arm64-v8a"
+cp -f "$JNI_SRC/arm64-v8a/libdart_ffi.so" "$JNI_DST/arm64-v8a/"
+
+# 兜底：若 libc++_shared.so 缺失（例如 jniLibs 被清理过且未重新 configure），从 NDK 补齐
+LIBCXX="$JNI_DST/arm64-v8a/libc++_shared.so"
+if [ ! -f "$LIBCXX" ]; then
+  NDK_LIBCXX="$ANDROID_NDK_HOME/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so"
+  if [ -f "$NDK_LIBCXX" ]; then
+    cp -f "$NDK_LIBCXX" "$LIBCXX"
+    echo "已从 NDK 补齐 libc++_shared.so"
+  else
+    echo "警告：未找到 libc++_shared.so，构建 APK 前请重新执行 flutter build（触发 CMake configure）" >&2
+  fi
+fi
+
 ls -la "$JNI_DST/arm64-v8a"
 echo "ANDROID_RUST_OK"

@@ -74,7 +74,9 @@ class SplashScreen extends StatelessWidget {
 
   void _handleUnauthenticated(BuildContext context, Unauthenticated result) {
     // replace Splash screen as root page
-    if (isAuthEnabled || UniversalPlatform.isMobile) {
+    // 二次开发：本地优先模式下（云鉴权未启用）不再把移动端强制跳到登录页，
+    // 否则本地模式在手机上会卡在一个永远无法完成的登录流程里。
+    if (isAuthEnabled) {
       context.go(SignInScreen.routeName);
     } else {
       // if the env is not configured, we will skip to the 'skip login screen'.

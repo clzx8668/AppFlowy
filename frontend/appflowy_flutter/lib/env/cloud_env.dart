@@ -2,6 +2,7 @@ import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/core/config/kv_keys.dart';
 import 'package:appflowy/env/backend_env.dart';
 import 'package:appflowy/env/env.dart';
+import 'package:appflowy/env/local_first.dart';
 import 'package:appflowy/plugins/shared/share/constants.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy_backend/log.dart';
@@ -202,6 +203,16 @@ class AppFlowyCloudSharedEnv {
   AuthenticatorType get authenticatorType => _authenticatorType;
 
   static Future<AppFlowyCloudSharedEnv> fromEnv() async {
+    // 二次开发：本地优先模式下强制使用本地认证，完全不连接 AppFlowy Cloud。
+    // 这样 isAuthEnabled / isAppFlowyCloudEnabled 均为 false，云同步、账号登录、
+    // 订阅与协作相关入口会自动隐藏（相关 UI 上游已按这两个开关做条件渲染）。
+    if (kLocalFirstMode) {
+      return AppFlowyCloudSharedEnv(
+        authenticatorType: AuthenticatorType.local,
+        appflowyCloudConfig: AppFlowyCloudConfiguration.defaultConfig(),
+      );
+    }
+
     // If [Env.enableCustomCloud] is true, then use the custom cloud configuration.
     if (Env.enableCustomCloud) {
       // Use the custom cloud configuration.

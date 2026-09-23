@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/core/config/kv_keys.dart';
+import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:bloc/bloc.dart';
@@ -38,12 +39,15 @@ class SpaceOrderBloc extends Bloc<SpaceOrderEvent, SpaceOrderState> {
       (event, emit) async {
         await event.when(
           initial: () async {
-            final tabsOrder = await _getTabsOrder();
-            final defaultTab = await _getDefaultTab();
+            final tabsOrder = _filterTabs(await _getTabsOrder());
+            final storedDefaultTab = await _getDefaultTab();
             emit(
               state.copyWith(
                 tabsOrder: tabsOrder,
-                defaultTab: defaultTab,
+                // 默认标签页被隐藏时，回退到第一个可见标签页
+                defaultTab: tabsOrder.contains(storedDefaultTab)
+                    ? storedDefaultTab
+                    : tabsOrder.first,
                 isLoading: false,
               ),
             );
@@ -64,6 +68,17 @@ class SpaceOrderBloc extends Bloc<SpaceOrderEvent, SpaceOrderState> {
   }
 
   final _storage = getIt<KeyValueStorage>();
+
+  /// 二次开发：本地优先模式（未启用 AppFlowy Cloud）下隐藏 Shared（协作/共享）标签页。
+  /// 注意要与默认标签页一起过滤，否则 TabController 的初始索引会越界。
+  List<MobileSpaceTabType> _filterTabs(List<MobileSpaceTabType> tabs) {
+    if (isAppFlowyCloudEnabled) {
+      return tabs;
+    }
+    final visible =
+        tabs.where((tab) => tab != MobileSpaceTabType.shared).toList();
+    return visible.isEmpty ? [MobileSpaceTabType.spaces] : visible;
+  }
 
   Future<MobileSpaceTabType> _getDefaultTab() async {
     try {

@@ -1,3 +1,4 @@
+import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/feature_flags.dart';
@@ -86,13 +87,15 @@ class SettingsMenu extends StatelessWidget {
               icon: const FlowySvg(FlowySvgs.settings_page_bell_m),
               changeSelectedPage: changeSelectedPage,
             ),
-            SettingsMenuElement(
-              page: SettingsPage.cloud,
-              selectedPage: currentPage,
-              label: LocaleKeys.settings_menu_cloudSettings.tr(),
-              icon: const FlowySvg(FlowySvgs.settings_page_cloud_m),
-              changeSelectedPage: changeSelectedPage,
-            ),
+            // 二次开发：本地优先模式下隐藏云服务设置入口（AppFlowy Cloud / 自建服务端）。
+            if (isAppFlowyCloudEnabled)
+              SettingsMenuElement(
+                page: SettingsPage.cloud,
+                selectedPage: currentPage,
+                label: LocaleKeys.settings_menu_cloudSettings.tr(),
+                icon: const FlowySvg(FlowySvgs.settings_page_cloud_m),
+                changeSelectedPage: changeSelectedPage,
+              ),
             SettingsMenuElement(
               page: SettingsPage.shortcuts,
               selectedPage: currentPage,
