@@ -93,8 +93,25 @@ flutter build apk --debug --target-platform android-arm64
 8. WSL 交叉编译 Rust 需要 bindgen 的 NDK sysroot 参数（已在 `doc/tools/android-rust-build.sh` 内设置），
    且 WSL 的 cargo-ndk 固定 3.5.4（4.x 要求 rustc ≥ 1.86）。
 
-## 七、版本与提交规范
+## 七、Git 远程与提交规范
 
-1. Fork 锁定稳定版本，不跟随上游 `main` 激进更新；上游只合并 Core 关键 Bug 修复。
-2. 自有业务代码全部放在独立扩展包，不污染 `frontend/appflowy_flutter/lib` 原生目录结构。
-3. 提交信息遵循仓库 `commitlint` 约定（本地 `.githooks` 已配置 `core.hooksPath=.githooks`）。
+1. `origin` = 自己的 fork（`https://github.com/clzx8668/AppFlowy.git`，日常推送目标）；
+   `upstream` = 官方（`https://github.com/AppFlowy-IO/AppFlowy.git`，只按需拉 Core 修复）。`main` 跟踪 `origin/main`。
+2. Fork 锁定稳定版本，不跟随上游 `main` 激进更新；上游只合并 Core 关键 Bug 修复。
+3. 自有业务代码全部放在独立扩展包，不污染 `frontend/appflowy_flutter/lib` 原生目录结构。
+4. 提交信息遵循 `commitlint` 约定（`core.hooksPath=.githooks` 已配置；
+   `commit-msg` 依赖 `.githooks/gitlint.exe`（go-gitlint 1.1.0，已安装，该文件在 .gitignore 中豁免）；
+   `pre-push` 要求工作区干净）。仓库级提交身份为 `clzx8668 <clzx8668@users.noreply.github.com>`。
+
+## 八、真机调试（荣耀 ELZ-AN10，Android 14 / arm64）
+
+```powershell
+$env:Path = "D:\AndroidSDK\platform-tools;D:\flutter\3.27.4\bin;" + $env:Path
+cd E:\Dev\AppFlowy\frontend\appflowy_flutter
+flutter devices                     # 设备号 A2NMVB1806003756
+flutter run -d A2NMVB1806003756     # 热重载：r / R / q
+```
+
+注意：当前 AppFlowy 0.11 默认走 AppFlowy Cloud 登录，而 `appflowy.cloud` 在本网络出口被 Cloudflare
+返回 403，真机启动后会卡在登录页——二次开发需先支持跳过登录、直接进入本地工作空间
+（与「放弃 AppFlowy Cloud + WebDAV 快照同步」的规划一致）。
