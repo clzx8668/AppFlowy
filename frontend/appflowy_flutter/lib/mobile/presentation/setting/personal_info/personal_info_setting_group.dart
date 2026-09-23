@@ -1,3 +1,4 @@
+import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet.dart';
 import 'package:appflowy/mobile/presentation/setting/widgets/mobile_setting_trailing.dart';
@@ -78,7 +79,9 @@ class PersonalInfoSettingGroup extends StatelessWidget {
                       _buildPasswordItem(context, userProfile),
                     ]
                   : [
-                      _buildLoginItem(context, userProfile),
+                      // 二次开发：本地优先模式下不显示"登录 AppFlowy Cloud"入口
+                      if (isAppFlowyCloudEnabled)
+                        _buildLoginItem(context, userProfile),
                     ],
             ],
           );

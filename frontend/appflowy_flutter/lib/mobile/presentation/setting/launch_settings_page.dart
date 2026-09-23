@@ -1,4 +1,4 @@
-import 'package:appflowy/env/env.dart';
+import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/base/app_bar/app_bar.dart';
 import 'package:appflowy/mobile/presentation/presentation.dart';
@@ -28,7 +28,8 @@ class MobileLaunchSettingsPage extends StatelessWidget {
           child: Column(
             children: [
               const LanguageSettingGroup(),
-              if (Env.enableCustomCloud) const SelfHostSettingGroup(),
+              // 二次开发：本地优先模式下隐藏自建/云端服务端配置入口
+              if (isAppFlowyCloudEnabled) const SelfHostSettingGroup(),
               const SupportSettingGroup(),
             ],
           ),

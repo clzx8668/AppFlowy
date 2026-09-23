@@ -1,4 +1,5 @@
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/feature_flags.dart';
@@ -30,8 +31,11 @@ class SidebarFooter extends StatelessWidget {
         Row(
           // mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Expanded(child: SidebarTemplateButton()),
-            _buildVerticalDivider(context),
+            // 二次开发：本地优先模式下隐藏指向 appflowy.com 的模板入口
+            if (isAppFlowyCloudEnabled) ...[
+              const Expanded(child: SidebarTemplateButton()),
+              _buildVerticalDivider(context),
+            ],
             const Expanded(child: SidebarTrashButton()),
           ],
         ),

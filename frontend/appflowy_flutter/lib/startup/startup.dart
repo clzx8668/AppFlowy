@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/env/cloud_env.dart';
+import 'package:appflowy/env/local_first.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/desktop_floating_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_hover_menu.dart';
 import 'package:appflowy/util/expand_views.dart';
@@ -34,7 +35,9 @@ class FlowyRunnerContext {
   final Directory applicationDataDirectory;
 }
 
-Future<void> runAppFlowy({bool isAnon = false}) async {
+// 二次开发：本地优先模式下，所有重启入口（登出后重启、切换数据目录后重启等）默认都回到
+// 本地（匿名）模式；否则内部调用 `runAppFlowy()` 会退回非本地模式并落到欢迎/登录流程。
+Future<void> runAppFlowy({bool isAnon = kLocalFirstMode}) async {
   Log.info('restart AppFlowy: isAnon: $isAnon');
 
   if (kReleaseMode) {

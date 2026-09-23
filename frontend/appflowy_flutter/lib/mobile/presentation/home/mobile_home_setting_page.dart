@@ -1,5 +1,4 @@
 import 'package:appflowy/env/cloud_env.dart';
-import 'package:appflowy/env/env.dart';
 import 'package:appflowy/features/workspace/data/repositories/rust_workspace_repository_impl.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
@@ -96,7 +95,8 @@ class _MobileHomeSettingPageState extends State<MobileHomeSettingPage> {
                     const WorkspaceSettingGroup(),
                   const AppearanceSettingGroup(),
                   const LanguageSettingGroup(),
-                  if (Env.enableCustomCloud) const CloudSettingGroup(),
+                  // 二次开发：本地优先模式下隐藏云服务设置（Cloud settings / Cloud server）
+                  if (isAppFlowyCloudEnabled) const CloudSettingGroup(),
                   if (isAuthEnabled)
                     AiSettingsGroup(
                       key: ValueKey(currentWorkspaceId),
@@ -105,10 +105,12 @@ class _MobileHomeSettingPageState extends State<MobileHomeSettingPage> {
                     ),
                   const SupportSettingGroup(),
                   const AboutSettingGroup(),
-                  UserSessionSettingGroup(
-                    userProfile: userProfile,
-                    showThirdPartyLogin: false,
-                  ),
+                  // 二次开发：本地优先模式下没有"账号"概念，隐藏退出登录/第三方登录等会话入口
+                  if (isAppFlowyCloudEnabled)
+                    UserSessionSettingGroup(
+                      userProfile: userProfile,
+                      showThirdPartyLogin: false,
+                    ),
                   const VSpace(20),
                 ],
               ),
