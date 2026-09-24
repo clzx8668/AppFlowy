@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_ai_ext/app_ai_ext.dart';
 import 'package:app_containers/app_containers.dart';
 // sqlite3 也导出 Row，与 Flutter 的 Row 组件同名，这里隐藏掉
 import 'package:app_biz_store/app_biz_store.dart' hide Row;
@@ -10,6 +11,8 @@ import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/diary_entry.dart';
+import 'package:appflowy/extensions/ai_entry.dart';
+import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -85,15 +88,6 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
     }
   }
 
-  ModuleContainer? _containerOf(String module) {
-    for (final container in _containers) {
-      if (container.module == module) {
-        return container;
-      }
-    }
-    return null;
-  }
-
   void _selectContainer(ModuleContainer container) {
     setState(() {
       _homeContainer = container;
@@ -135,13 +129,12 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                   onOpenDrawer: () =>
                       _scaffoldKey.currentState?.openDrawer(),
                 ),
-                _ContainerRecordsView(
-                  container: _containerOf(ContainerModule.ai),
-                  repository: _repository,
-                  title: 'AI',
-                  showDrawerButton: true,
+                _AiMemoryView(
+                  containers: _containers,
                   onOpenDrawer: () =>
                       _scaffoldKey.currentState?.openDrawer(),
+                  onOpenDocument: (viewId) =>
+                      openDocumentByViewId(context, viewId),
                 ),
                 _buildSettingsTab(context),
               ],
@@ -331,6 +324,18 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
             onTap: () => unawaited(_createContainerFlow(context)),
           ),
           ListTile(
+            leading: const Icon(Icons.cloud_sync_outlined),
+            title: const Text('WebDAV 快照同步'),
+            subtitle: const Text('双库 + 附件快照、哈希校验、冲突人工选择'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => WebDavSettingsPage(
+                  workspaceId: widget.workspaceId,
+                ),
+              ),
+            ),
+          ),
+          ListTile(
             leading: const Icon(Icons.settings_outlined),
             title: const Text('全部设置'),
             subtitle: const Text('外观 / 语言 / 数据 / 关于'),
@@ -373,6 +378,12 @@ class _CalendarViewState extends State<_CalendarView> {
   late DateTime _selected;
   Map<String, DiaryEntry> _entries = {};
 
+  /// 0 = 月历，1 = 时间线（iOS 风格分段控件）。
+  int _segment = 0;
+  List<DiaryEntry> _timeline = const [];
+  List<DiaryEntry> _onThisDay = const [];
+  Map<String, int> _moodCounts = const {};
+
   @override
   void initState() {
     final now = DateTime.now();
@@ -407,11 +418,17 @@ class _CalendarViewState extends State<_CalendarView> {
       return;
     }
     final entries = await service.entriesOfMonth(_month);
+    final timeline = await service.timeline();
+    final onThisDay = await service.onThisDay(_selected);
+    final moodCounts = await service.moodCounts(month: _month);
     if (!mounted) {
       return;
     }
     setState(() {
       _entries = {for (final entry in entries) entry.dateKey: entry};
+      _timeline = timeline;
+      _onThisDay = onThisDay;
+      _moodCounts = moodCounts;
       _loading = false;
     });
   }
@@ -433,6 +450,19 @@ class _CalendarViewState extends State<_CalendarView> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('打开日记失败：$e')));
       }
+    }
+  }
+
+  /// 从时间线/那年今日列表打开某条日记（有文档就直接打开，没有就创建）。
+  Future<void> _openEntry(DiaryEntry entry) async {
+    final documentId = entry.documentId;
+    if (documentId != null && documentId.isNotEmpty) {
+      await openDocumentByViewId(context, documentId);
+      return;
+    }
+    final date = DiaryEntry.parseKey(entry.dateKey);
+    if (date != null) {
+      await _openDiary(date);
     }
   }
 
@@ -551,46 +581,327 @@ class _CalendarViewState extends State<_CalendarView> {
           ? const Center(child: CircularProgressIndicator.adaptive())
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-              children: [
-                // 月份大标题（iOS18 风格：大号、留白）
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${_month.year}年${_month.month}月',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+              children: _segment == 0
+                  ? [
+                      _buildSegmentControl(theme),
+                      const SizedBox(height: 12),
+                      // 月份大标题（iOS18 风格：大号、留白）
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${_month.year}年${_month.month}月',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_left),
+                            onPressed: () {
+                              setState(() {
+                                _month =
+                                    DateTime(_month.year, _month.month - 1);
+                              });
+                              unawaited(_reload());
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_right),
+                            onPressed: () {
+                              setState(() {
+                                _month =
+                                    DateTime(_month.year, _month.month + 1);
+                              });
+                              unawaited(_reload());
+                            },
+                          ),
+                        ],
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_left),
-                      onPressed: () {
-                        setState(() {
-                          _month = DateTime(_month.year, _month.month - 1);
-                        });
-                        unawaited(_reload());
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_right),
-                      onPressed: () {
-                        setState(() {
-                          _month = DateTime(_month.year, _month.month + 1);
-                        });
-                        unawaited(_reload());
-                      },
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      _buildWeekHeader(theme),
+                      const SizedBox(height: 4),
+                      _buildMonthGrid(theme),
+                      const SizedBox(height: 20),
+                      _buildSelectedDayCard(theme, selectedEntry),
+                      const SizedBox(height: 20),
+                      _buildMoodStatsCard(theme),
+                    ]
+                  : [
+                      _buildSegmentControl(theme),
+                      const SizedBox(height: 16),
+                      _buildMoodStatsCard(theme),
+                      const SizedBox(height: 16),
+                      _buildOnThisDayCard(theme),
+                      const SizedBox(height: 16),
+                      _buildTimelineCard(theme),
+                    ],
+            ),
+    );
+  }
+
+  /// iOS 风格分段控件：月历 / 时间线。
+  Widget _buildSegmentControl(ThemeData theme) {
+    Widget item(int index, String label, IconData icon) {
+      final selected = _segment == index;
+      return Expanded(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            setState(() => _segment = index);
+            unawaited(_reload());
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected
+                  ? theme.colorScheme.surface
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(9),
+              boxShadow: selected
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x14000000),
+                        blurRadius: 4,
+                        offset: Offset(0, 1),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(height: 8),
-                _buildWeekHeader(theme),
-                const SizedBox(height: 4),
-                _buildMonthGrid(theme),
-                const SizedBox(height: 20),
-                _buildSelectedDayCard(theme, selectedEntry),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
               ],
             ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Row(
+        children: [
+          item(0, '月历', Icons.calendar_month_outlined),
+          item(1, '时间线', Icons.timeline_outlined),
+        ],
+      ),
+    );
+  }
+
+  /// 心情统计：本月每种心情的数量 + 占比条。
+  Widget _buildMoodStatsCard(ThemeData theme) {
+    final total = _moodCounts.values.fold<int>(0, (sum, v) => sum + v);
+    return _RecordCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '心情统计 · ${_month.year}年${_month.month}月',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (total == 0)
+            Text(
+              '本月还没有记录心情',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            )
+          else
+            for (final option in kDiaryMoodOptions)
+              if ((_moodCounts[option.$1] ?? 0) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Text(option.$1, style: const TextStyle(fontSize: 16)),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 40,
+                        child: Text(
+                          option.$2,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: (_moodCounts[option.$1] ?? 0) / total,
+                            minHeight: 8,
+                            backgroundColor:
+                                theme.colorScheme.surfaceContainerHighest,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              _moodColor(option.$1, theme),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${_moodCounts[option.$1]} 天',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
+  /// 那年今日：同月同日的历史日记。
+  Widget _buildOnThisDayCard(ThemeData theme) {
+    return _RecordCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '那年今日 · ${_selected.month}月${_selected.day}日',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_onThisDay.isEmpty)
+            Text(
+              '往年今天还没有记录',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            )
+          else
+            for (final entry in _onThisDay)
+              _buildEntryRow(theme, entry, showFullDate: true),
+        ],
+      ),
+    );
+  }
+
+  /// 时间线：最近写过的日记，倒序。
+  Widget _buildTimelineCard(ThemeData theme) {
+    return _RecordCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '时间线',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_timeline.isEmpty)
+            Text(
+              '还没有日记，回去月历里写一篇吧',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            )
+          else
+            for (final entry in _timeline)
+              _buildEntryRow(theme, entry, showFullDate: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEntryRow(
+    ThemeData theme,
+    DiaryEntry entry, {
+    bool showFullDate = false,
+  }) {
+    final date = DiaryEntry.parseKey(entry.dateKey);
+    final weekday = date == null
+        ? ''
+        : '周${const ['一', '二', '三', '四', '五', '六', '日'][date.weekday - 1]}';
+    final chips = [
+      if (entry.mood.isNotEmpty) entry.mood,
+      if (entry.weather.isNotEmpty) entry.weather,
+      if (entry.location.isNotEmpty) '📍${entry.location}',
+    ];
+    return InkWell(
+      onTap: () => unawaited(_openEntry(entry)),
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Row(
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _moodColor(entry.mood, theme),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    showFullDate
+                        ? entry.dateKey
+                        : (date == null
+                            ? entry.dateKey
+                            : '${date.month}月${date.day}日'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (chips.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      chips.join('  '),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Text(
+              weekday,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: theme.colorScheme.outline,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -766,6 +1077,435 @@ class _CalendarViewState extends State<_CalendarView> {
       default:
         return theme.colorScheme.primary.withValues(alpha: 0.7);
     }
+  }
+}
+
+/// AI 标签页：本地 AI 记忆。
+///
+/// v0 定位（与蓝图一致）：
+/// - **离线可用**：本地抽取式摘要（`LocalTextDigester`），不依赖任何外部服务；
+/// - **记忆库**：摘要/标签写进独立业务库（`ai_digests`），原始正文仍在内核文档里；
+/// - **可迭代**：右上角"模型"占位说明后续接大模型（云端 / 本地 Ollama）只需换实现。
+class _AiMemoryView extends StatefulWidget {
+  const _AiMemoryView({
+    required this.containers,
+    this.onOpenDrawer,
+    this.onOpenDocument,
+  });
+
+  final List<ModuleContainer> containers;
+  final VoidCallback? onOpenDrawer;
+  final Future<void> Function(String viewId)? onOpenDocument;
+
+  @override
+  State<_AiMemoryView> createState() => _AiMemoryViewState();
+}
+
+class _AiMemoryViewState extends State<_AiMemoryView> {
+  final TextEditingController _controller = TextEditingController();
+
+  AiService? _service;
+  bool _loading = true;
+  bool _busy = false;
+  List<AiDigest> _memories = const [];
+  List<ViewPB> _recentDocs = const [];
+  AiDigest? _last;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_init());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _init() async {
+    try {
+      final service = await createAiService();
+      final memories = await service.memories();
+      final docs = await _recentDocuments();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _service = service;
+        _memories = memories;
+        _recentDocs = docs;
+        _loading = false;
+      });
+    } catch (e) {
+      Log.error('[AI] 初始化失败：$e');
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  /// 最近内容：内核里最近的文档页面（排除容器本身），用于一键生成摘要。
+  Future<List<ViewPB>> _recentDocuments() async {
+    final all = await ViewBackendService.getAllViews();
+    final views = all.toNullable()?.items ?? const <ViewPB>[];
+    final containerIds = widget.containers.map((c) => c.viewId).toSet();
+    final docs = views
+        .where(
+          (view) =>
+              view.layout == ViewLayoutPB.Document &&
+              view.parentViewId.isNotEmpty &&
+              !containerIds.contains(view.id),
+        )
+        .toList()
+      ..sort((a, b) {
+        final ta = a.lastEdited == Int64.ZERO ? a.createTime : a.lastEdited;
+        final tb = b.lastEdited == Int64.ZERO ? b.createTime : b.lastEdited;
+        return tb.compareTo(ta);
+      });
+    return docs.take(10).toList(growable: false);
+  }
+
+  Future<void> _reload() async {
+    final service = _service;
+    if (service == null) {
+      return;
+    }
+    final memories = await service.memories();
+    final docs = await _recentDocuments();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _memories = memories;
+      _recentDocs = docs;
+    });
+  }
+
+  Future<void> _run(Future<AiDigest> Function() action) async {
+    if (_busy) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final digest = await action();
+      await _reload();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _last = digest);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：${e.toString().replaceFirst('Exception: ', '')}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: widget.onOpenDrawer,
+        ),
+        title: const Text('AI 记忆'),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator.adaptive())
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+              children: [
+                _buildIntroCard(theme),
+                const SizedBox(height: 16),
+                _buildRecentDocumentsCard(theme),
+                const SizedBox(height: 16),
+                _buildMemoriesCard(theme),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildIntroCard(ThemeData theme) {
+    return _RecordCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                '本地摘要',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '离线',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '纯本地抽取式摘要与标签，不联网、不上传；后续可切换云端或本地大模型。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            minLines: 3,
+            maxLines: 6,
+            decoration: const InputDecoration(
+              hintText: '把一段文字贴进来，或直接从下面选一篇内容…',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              FilledButton.tonal(
+                onPressed: _busy
+                    ? null
+                    : () => unawaited(
+                          _run(() async {
+                            final service = _service!;
+                            return service.digestText(text: _controller.text);
+                          }),
+                        ),
+                child: Text(_busy ? '处理中…' : '生成摘要与标签'),
+              ),
+              const Spacer(),
+              if (_controller.text.isNotEmpty)
+                TextButton(
+                  onPressed: () => setState(() {
+                    _controller.clear();
+                    _last = null;
+                  }),
+                  child: const Text('清空'),
+                ),
+            ],
+          ),
+          if (_last != null) ...[
+            const SizedBox(height: 12),
+            _buildDigestBody(theme, _last!),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDigestBody(
+    ThemeData theme,
+    AiDigest digest, {
+    bool showTitle = true,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showTitle && digest.sourceTitle.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              digest.sourceTitle,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        Text(digest.summary, style: theme.textTheme.bodyMedium),
+        if (digest.tags.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final tag in digest.tags)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '#$tag',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildRecentDocumentsCard(ThemeData theme) {
+    return _RecordCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '最近内容',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          if (_recentDocs.isEmpty)
+            Text(
+              '还没有可摘要的页面',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            )
+          else
+            for (final doc in _recentDocs)
+              InkWell(
+                onTap: () =>
+                    unawaited(widget.onOpenDocument?.call(doc.id) ?? Future.value()),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          doc.name.isEmpty ? '未命名页面' : doc.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '生成摘要',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.auto_awesome, size: 18),
+                        onPressed: _busy
+                            ? null
+                            : () => unawaited(
+                                  _run(() async {
+                                    final service = _service!;
+                                    return service.digestDocument(
+                                      documentId: doc.id,
+                                      title:
+                                          doc.name.isEmpty ? '未命名页面' : doc.name,
+                                    );
+                                  }),
+                                ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMemoriesCard(ThemeData theme) {
+    return _RecordCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'AI 记忆库',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${_memories.length} 条',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_memories.isEmpty)
+            Text(
+              '还没有记忆。生成第一条摘要后，这里会积累你的个人记忆。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            )
+          else
+            for (final memory in _memories)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            memory.sourceTitle.isEmpty
+                                ? '(无标题)'
+                                : memory.sourceTitle,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _formatTime(memory.updatedAt),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.outline,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '删除这条记忆',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.close, size: 16),
+                          onPressed: () => unawaited(
+                            (_service?.forget(memory.sourceId) ??
+                                    Future<void>.value())
+                                .then((_) => _reload()),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // 记忆库里标题已经在上方单独显示过，这里不再重复
+                    _buildDigestBody(theme, memory, showTitle: false),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${time.month}-${two(time.day)} ${two(time.hour)}:${two(time.minute)}';
   }
 }
 

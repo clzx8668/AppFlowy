@@ -32,6 +32,15 @@ abstract interface class DiaryRepository {
     String endDateKey,
   );
 
+  /// 最近 N 天有内容的日记（时间线，倒序）。
+  Future<List<DiaryEntry>> recent(int limit);
+
+  /// 同月同日的历史日记（"那年今日"，不含当天），倒序。
+  Future<List<DiaryEntry>> onMonthDay(int month, int day);
+
+  /// 心情统计：区间内每种心情的数量（用于心情统计卡片）。
+  Future<Map<String, int>> moodCounts(String startDateKey, String endDateKey);
+
   Future<void> upsert(DiaryEntry entry);
 }
 
@@ -63,6 +72,44 @@ class DiaryRepositoryImpl implements DiaryRepository {
       [startDateKey, endDateKey],
     );
     return rows.map(_fromRow).toList();
+  }
+
+  @override
+  Future<List<DiaryEntry>> recent(int limit) async {
+    final rows = _db.raw.select(
+      'SELECT * FROM $kDiaryTable ORDER BY date_key DESC LIMIT ?;',
+      [limit],
+    );
+    return rows.map(_fromRow).toList();
+  }
+
+  @override
+  Future<List<DiaryEntry>> onMonthDay(int month, int day) async {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final suffix = '${two(month)}-${two(day)}';
+    final rows = _db.raw.select(
+      'SELECT * FROM $kDiaryTable '
+      "WHERE substr(date_key, 6, 5) = ? "
+      'ORDER BY date_key DESC;',
+      [suffix],
+    );
+    return rows.map(_fromRow).toList();
+  }
+
+  @override
+  Future<Map<String, int>> moodCounts(
+    String startDateKey,
+    String endDateKey,
+  ) async {
+    final rows = _db.raw.select(
+      'SELECT mood, COUNT(*) AS c FROM $kDiaryTable '
+      "WHERE mood <> '' AND date_key >= ? AND date_key <= ? "
+      'GROUP BY mood ORDER BY c DESC;',
+      [startDateKey, endDateKey],
+    );
+    return {
+      for (final row in rows) row['mood'] as String: row['c'] as int,
+    };
   }
 
   @override

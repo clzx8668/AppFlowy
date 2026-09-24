@@ -66,6 +66,29 @@ class DiaryService {
     );
   }
 
+  /// 时间线：最近 N 天有内容的日记（倒序）。
+  Future<List<DiaryEntry>> timeline({int limit = 50}) {
+    return _repository.recent(limit);
+  }
+
+  /// 那年今日：同月同日的历史日记，**不含 date 当天那一篇**。
+  Future<List<DiaryEntry>> onThisDay(DateTime date) async {
+    final entries = await _repository.onMonthDay(date.month, date.day);
+    final currentKey = DiaryEntry.keyOf(date);
+    return entries.where((e) => e.dateKey != currentKey).toList();
+  }
+
+  /// 心情统计：区间内每种心情的数量（默认统计本月）。
+  Future<Map<String, int>> moodCounts({DateTime? month}) {
+    final target = month ?? DateTime.now();
+    final start = DateTime(target.year, target.month, 1);
+    final end = DateTime(target.year, target.month + 1, 0);
+    return _repository.moodCounts(
+      DiaryEntry.keyOf(start),
+      DiaryEntry.keyOf(end),
+    );
+  }
+
   Future<DiaryEntry> _patch(
     DateTime date,
     DiaryEntry Function(DiaryEntry entry) patch,

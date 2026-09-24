@@ -10,6 +10,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # 独立业务库（AI 记忆库表 ai_digests，与内核 Core 库分离）
+  app_biz_store:
+    path: ../app_biz_store
   appflowy_backend:
     path: ../appflowy_backend
   appflowy_result:

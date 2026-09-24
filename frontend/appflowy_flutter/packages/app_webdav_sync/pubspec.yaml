@@ -16,6 +16,9 @@ dependencies:
   http: ^1.0.0
   path: ^1.8.3
   crypto: ^3.0.3
+  # 独立业务库（WebDAV 配置表 + 同步状态）
+  app_biz_store:
+    path: ../app_biz_store
   appflowy_backend:
     path: ../appflowy_backend
   appflowy_result:
