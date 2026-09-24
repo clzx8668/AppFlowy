@@ -46,3 +46,4 @@ frontend/*.deb
 # 二次开发：真机调试临时目录（DB 快照 / 截图），不入库
 .tmp_db*/
 .tmp_shots/
+.tmp_scripts/
