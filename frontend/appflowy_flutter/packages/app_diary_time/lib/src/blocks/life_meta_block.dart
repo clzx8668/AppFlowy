@@ -2,67 +2,37 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// 生活元数据块（自定义块，v0）：心情 / 天气 / 位置。
+/// 生活元数据块：心情 / 天气 / 位置。
 ///
-/// 关键事实（已核对内核源码 `collab-document/src/blocks/entities.rs`）：
-/// `Block.ty` 是**字符串**、`Block.data` 是任意 JSON —— 因此自定义块类型可以安全落库、
-/// 参与快照同步与全文检索，**不需要修改内核**（蓝图"自定义块只写 payload"的要求成立）。
+/// **v1 方案：用内核已支持的 `callout` 块承载 + 自定义 payload**。
 ///
-/// 数据落点：全部写在节点的 attributes（= block.payload），二进制资源不入库。
+/// 为什么不用自定义节点类型（`life_meta`）：v0 实测虽然能插入渲染，但**重启后块丢失** ——
+/// `Block.ty` 是 String 只说明存储结构能容纳，AppFlowy 文档的运行时写入/同步路径并不接受未知块类型。
+/// 因此改用标准块 `callout`：节点类型内核确定支持，我们的数据写在它的 attributes（payload）里，
+/// 由 App 侧覆写 `CalloutBlockKeys.type` 的构建器来渲染（带 `af_life_meta` 标记走我们的卡片，否则回退上游 callout）。
+///
+/// 数据落点：`af_life_meta` / `af_date` / `af_mood` / `af_weather` / `af_location` 全在 attributes 里，
+/// 二进制资源不入库（蓝图要求）。
 class LifeMetaBlockKeys {
   const LifeMetaBlockKeys._();
 
-  static const String type = 'life_meta';
-  static const String dateKey = 'date';
-  static const String moodKey = 'mood';
-  static const String weatherKey = 'weather';
-  static const String locationKey = 'location';
+  /// 标记：这是一个生活元数据块（而不是普通 callout）。
+  static const String markerKey = 'af_life_meta';
+  static const String dateKey = 'af_date';
+  static const String moodKey = 'af_mood';
+  static const String weatherKey = 'af_weather';
+  static const String locationKey = 'af_location';
 }
 
-/// 创建一个生活元数据块节点（供斜杠菜单/程序化插入使用）。
-Node lifeMetaBlockNode({
-  String? date,
-  String mood = '',
-  String weather = '',
-  String location = '',
-}) {
-  return Node(
-    type: LifeMetaBlockKeys.type,
-    attributes: {
-      LifeMetaBlockKeys.dateKey: date ?? _todayKey(),
-      LifeMetaBlockKeys.moodKey: mood,
-      LifeMetaBlockKeys.weatherKey: weather,
-      LifeMetaBlockKeys.locationKey: location,
-    },
-  );
-}
+/// 判断某个节点是否是我们扩展的生活元数据块。
+bool isLifeMetaNode(Node node) =>
+    node.attributes[LifeMetaBlockKeys.markerKey] == true;
 
-String _todayKey() {
+/// 日期键工具（yyyy-MM-dd）。
+String lifeMetaTodayKey() {
   final now = DateTime.now();
   String two(int v) => v.toString().padLeft(2, '0');
   return '${now.year}-${two(now.month)}-${two(now.day)}';
-}
-
-class LifeMetaBlockComponentBuilder extends BlockComponentBuilder {
-  LifeMetaBlockComponentBuilder({super.configuration});
-
-  @override
-  BlockComponentWidget build(BlockComponentContext blockComponentContext) {
-    final node = blockComponentContext.node;
-    return LifeMetaBlockComponentWidget(
-      key: node.key,
-      node: node,
-      configuration: configuration,
-      showActions: showActions(node),
-      actionBuilder: (context, state) =>
-          actionBuilder(blockComponentContext, state),
-      actionTrailingBuilder: (context, state) =>
-          actionTrailingBuilder(blockComponentContext, state),
-    );
-  }
-
-  @override
-  BlockComponentValidate get validate => (node) => true;
 }
 
 class LifeMetaBlockComponentWidget extends BlockComponentStatefulWidget {
@@ -91,7 +61,8 @@ class _LifeMetaBlockComponentWidgetState
   EditorState get editorState => context.read<EditorState>();
 
   String get _date =>
-      node.attributes[LifeMetaBlockKeys.dateKey] as String? ?? _todayKey();
+      node.attributes[LifeMetaBlockKeys.dateKey] as String? ??
+          lifeMetaTodayKey();
   String get _mood =>
       node.attributes[LifeMetaBlockKeys.moodKey] as String? ?? '';
   String get _weather =>
@@ -276,58 +247,3 @@ const List<(String emoji, String label)> kDiaryWeatherOptions = [
   ('🌧️', '雨'),
   ('❄️', '雪'),
 ];
-
-/// 斜杠菜单项：插入「生活记录」块。
-SelectionMenuItem lifeMetaSlashMenuItem() {
-  return SelectionMenuItem(
-    getName: () => '生活记录',
-    keywords: const [
-      'life',
-      'meta',
-      'mood',
-      'weather',
-      'location',
-      '心情',
-      '天气',
-      '位置',
-      '生活',
-    ],
-    handler: (editorState, _, __) async =>
-        editorState.insertLifeMetaBlock(),
-    icon: (editorState, isSelected, style) => Icon(
-      Icons.wb_sunny_outlined,
-      size: 18,
-      color: isSelected
-          ? style.selectionMenuItemSelectedIconColor
-          : style.selectionMenuItemIconColor,
-    ),
-  );
-}
-
-extension LifeMetaEditorStateExtension on EditorState {
-  /// 在当前段落之后插入一个生活记录块，并补一个空段落便于继续输入。
-  Future<void> insertLifeMetaBlock() async {
-    final selection = this.selection;
-    if (selection == null || !selection.isCollapsed) {
-      return;
-    }
-    await insertLifeMetaBlockAt(selection);
-  }
-
-  /// 在指定选区位置插入生活记录块（供移动端「+」面板使用）。
-  Future<void> insertLifeMetaBlockAt(Selection selection) async {
-    final path = selection.end.path;
-    final node = getNodeAtPath(path);
-    final delta = node?.delta;
-    if (node == null || delta == null) {
-      return;
-    }
-    final insertedPath = delta.isEmpty ? path : path.next;
-    final transaction = this.transaction
-      ..insertNode(insertedPath, lifeMetaBlockNode())
-      ..insertNode(insertedPath.next, paragraphNode())
-      ..afterSelection =
-          Selection.collapsed(Position(path: insertedPath.next.next));
-    await apply(transaction);
-  }
-}

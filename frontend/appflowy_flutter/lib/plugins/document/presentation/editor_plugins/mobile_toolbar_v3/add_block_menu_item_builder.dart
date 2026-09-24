@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_diary_time/app_diary_time.dart';
+import 'package:appflowy/extensions/blocks/life_meta_callout_builder.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/base/type_option_menu_item.dart';
@@ -63,7 +64,8 @@ class AddBlockMenuItemBuilder {
       ..._buildCalloutMenuItems(colorMap),
       ..._buildCodeMenuItems(colorMap),
       ..._buildMathEquationMenuItems(colorMap),
-      // 二次开发（暂缓）：自定义块 v0 未通过落库回读验证，先不暴露入口（见 doc/二次开发改动记录.md）
+      // 二次开发：自定义「生活记录」块（callout + af_life_meta payload，落库/同步安全）
+      ..._buildLifeMetaMenuItems(colorMap),
     ];
   }
 
@@ -86,7 +88,8 @@ class AddBlockMenuItemBuilder {
       ..._buildCalloutMenuItems(colorMap),
       ..._buildCodeMenuItems(colorMap),
       ..._buildMathEquationMenuItems(colorMap),
-      // 二次开发（暂缓）：同上
+      // 二次开发：同上
+      ..._buildLifeMetaMenuItems(colorMap),
     ];
   }
 
@@ -100,9 +103,10 @@ class AddBlockMenuItemBuilder {
   ) {
     return [
       TypeOptionMenuItemValue(
-        value: LifeMetaBlockKeys.type,
+        // 用独立 value 避免与真正的 callout 项冲突（实际插入由 onTap 完成）
+        value: LifeMetaBlockKeys.markerKey,
         backgroundColor:
-            colorMap[LifeMetaBlockKeys.type] ?? const Color(0x33FFC107),
+            colorMap[LifeMetaBlockKeys.markerKey] ?? const Color(0x33FFC107),
         text: '生活记录',
         icon: FlowySvgs.m_add_block_quote_s,
         onTap: (_, __) {

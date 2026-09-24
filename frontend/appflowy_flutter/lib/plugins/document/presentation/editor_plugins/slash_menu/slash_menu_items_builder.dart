@@ -1,6 +1,7 @@
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/operations/ai_writer_node_extension.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/extensions/blocks/life_meta_callout_builder.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:universal_platform/universal_platform.dart';
@@ -29,20 +30,22 @@ List<SelectionMenuItem> slashMenuItemsBuilder({
     if (isInTable) {
       return mobileItemsInTale;
     } else {
-      // 二次开发（暂缓）：自定义「生活记录」块 v0 未通过落库回读验证（重启后丢失），
-      // 先不暴露入口，待改为"标准块类型 + 自定义 payload"方案后再启用。
-      return mobileItems;
+      // 二次开发：追加自定义「生活记录」块（callout + af_life_meta payload）
+      return [...mobileItems, lifeMetaSlashMenuItem()];
     }
   } else {
     if (isInTable) {
       return _simpleTableSlashMenuItems();
     } else {
-      // 二次开发（暂缓）：同上，v0 自定义块类型落库回读未通过，暂不暴露入口。
-      return _defaultSlashMenuItems(
-        isLocalMode: isLocalMode,
-        documentBloc: documentBloc,
-        isEmpty: isEmpty,
-      );
+      // 二次开发：同上
+      return [
+        ..._defaultSlashMenuItems(
+          isLocalMode: isLocalMode,
+          documentBloc: documentBloc,
+          isEmpty: isEmpty,
+        ),
+        lifeMetaSlashMenuItem(),
+      ];
     }
   }
 }

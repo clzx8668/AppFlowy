@@ -1,4 +1,4 @@
-import 'package:app_diary_time/app_diary_time.dart';
+import 'package:appflowy/extensions/blocks/life_meta_callout_builder.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
@@ -360,9 +360,11 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
       context,
       configuration,
     ),
-    CalloutBlockKeys.type: _buildCalloutBlockComponentBuilder(
-      context,
-      configuration,
+    // 二次开发：覆写 callout 构建器 —— 带 af_life_meta 标记的 callout 渲染成"生活记录"卡片，
+    // 其它 callout 原样走上游实现（自定义块改用标准块类型承载，落库/同步安全）。
+    CalloutBlockKeys.type: LifeMetaCalloutBlockComponentBuilder(
+      fallback: _buildCalloutBlockComponentBuilder(context, configuration),
+      configuration: configuration,
     ),
     DividerBlockKeys.type: _buildDividerBlockComponentBuilder(
       context,
@@ -436,11 +438,6 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
     SimpleColumnBlockKeys.type: _buildSimpleColumnBlockComponentBuilder(
       context,
       configuration,
-    ),
-    // 二次开发：自定义「生活记录」块（心情/天气/位置）。
-    // 内核 Block.ty 是字符串、data 是任意 JSON，自定义块类型可安全落库与回读。
-    LifeMetaBlockKeys.type: LifeMetaBlockComponentBuilder(
-      configuration: configuration,
     ),
   };
 
