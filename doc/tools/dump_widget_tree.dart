@@ -1,11 +1,13 @@
-// 无画面环境下校验桌面端 UI 是否渲染（拉 Flutter 控件树）：
-//   dart doc/tools/dump_widget_tree.dart <VMServiceUri> [关键字...]
+// 无画面环境下校验桌面端 UI 是否渲染（拉 Flutter 控件树 / 渲染树）：
+//   dart doc/tools/dump_widget_tree.dart <VMServiceUri> [--render] [关键字...]
 //
 // 用法示例（配合 `flutter run -d windows`，日志里会给 VM Service URI）：
 //   dart doc/tools/dump_widget_tree.dart http://127.0.0.1:9052/TOKEN=/ LocalModulesSection
+//   dart doc/tools/dump_widget_tree.dart http://127.0.0.1:9052/TOKEN=/ --render 新页面 "日历 · 日记"
 //
 // 为什么需要它：本机 Windows 会话抓不到 Flutter 画面（全屏/窗口截图都是黑屏），
 // 用 VM Service 的 ext.flutter.debugDumpApp 直接拿控件树，就能确认某个组件到底有没有被渲染。
+// 加 --render 时改拉渲染树（含每个节点的 offset/size），可用来核对"缩进/对齐"这类样式问题。
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
@@ -16,7 +18,9 @@ Future<void> main(List<String> args) async {
     exit(2);
   }
   final uri = args.first;
-  final keywords = args.skip(1).toList();
+  final rest = args.skip(1).toList();
+  final useRenderTree = rest.contains('--render');
+  final keywords = rest.where((arg) => arg != '--render').toList();
   final wsUri = uri
       .replaceFirst('http://', 'ws://')
       .replaceFirst('https://', 'wss://')
@@ -68,9 +72,12 @@ Future<void> main(List<String> args) async {
   }
   final isolateId = (isolates.first as Map)['id'] as String;
 
-  final result = await call('ext.flutter.debugDumpApp', {
+  final result = await call(
+    useRenderTree ? 'ext.flutter.debugDumpRenderTree' : 'ext.flutter.debugDumpApp',
+    {
     'isolateId': isolateId,
-  });
+    },
+  );
   final tree = (result['data'] as String?) ?? '';
   await socket.close();
 

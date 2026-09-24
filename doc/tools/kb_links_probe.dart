@@ -64,4 +64,45 @@ void main() {
   final ignoredOthers =
       refs.every((r) => r.targetId == 'page-A' || r.targetId == 'page-B');
   print('块引用识别=${hasBlockRef} 去重=${deduped} 忽略日期/链接=${ignoredOthers}');
+
+  // ---- 未链接提及：正文写了别的页面标题但还没做引用 ----
+  final unlinked = findUnlinkedMentionsInNodes(
+    sourceId: 'doc-1',
+    nodes: [
+      TextNodeInput(
+        nodeId: 'n1',
+        text: '今天和 客户拜访记录 聊了很久，顺便提到 客户',
+        deltaJson: [
+          {'insert': '今天和 客户拜访记录 聊了很久，顺便提到 客户'},
+        ],
+      ),
+      TextNodeInput(
+        nodeId: 'n2',
+        text: '参考 报价单要点 里的数据',
+        deltaJson: [
+          {'insert': '参考 '},
+          {
+            'insert': '报价单要点',
+            'attributes': {
+              'mention': {'type': 'page', 'page_id': 'page-B'},
+            },
+          },
+          {'insert': ' 里的数据'},
+        ],
+      ),
+    ],
+    titles: {
+      'doc-1': '本页（应被排除）',
+      'page-A': '客户拜访记录',
+      'page-B': '报价单要点',
+      'page-C': '客户',
+      'page-D': '客',
+    },
+  );
+  print('未链接提及=${unlinked.map((r) => '${r.title}@${r.nodeId}:${r.start}').toList()}');
+  print(
+    '（期望 2 条：客户拜访记录@n1:4 与 客户@n1:21 —— 两处都是正文里真实出现的页面名；\n'
+    '  说明：同一片段不会被更短标题重复命中；"报价单要点"已是指用不提示；\n'
+    '  单字标题"客"被最短长度规则排除；"本页（应被排除）"被自引用排除）',
+  );
 }

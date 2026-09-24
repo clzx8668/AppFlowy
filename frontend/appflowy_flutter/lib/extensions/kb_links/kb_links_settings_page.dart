@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_kb_links/app_kb_links.dart';
+import 'package:appflowy/extensions/kb_links/knowledge_graph_page.dart';
 import 'package:appflowy/extensions/kb_links_entry.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:flutter/material.dart';
@@ -143,6 +144,18 @@ class _KbLinksSettingsPageState extends State<KbLinksSettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: _busy
+                      ? null
+                      : () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const KnowledgeGraphPage(),
+                            ),
+                          ),
+                  icon: const Icon(Icons.hub_outlined, size: 18),
+                  label: const Text('打开关系图谱'),
+                ),
+                const SizedBox(height: 8),
                 if (_progress != null) ...[
                   LinearProgressIndicator(value: _progress, minHeight: 3),
                   const SizedBox(height: 8),

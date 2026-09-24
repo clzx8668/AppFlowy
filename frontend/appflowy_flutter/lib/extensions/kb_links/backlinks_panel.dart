@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_kb_links/app_kb_links.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/kb_links_entry.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/mention/mention_block.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
@@ -38,6 +39,7 @@ class _BacklinksPanelState extends State<BacklinksPanel> {
   LinkService? _service;
   List<DocLink> _backlinks = const [];
   List<DocLink> _outgoing = const [];
+  List<UnlinkedMention> _suggestions = const [];
   bool _loading = true;
   bool _expanded = false;
   Timer? _debounce;
@@ -87,12 +89,14 @@ class _BacklinksPanelState extends State<BacklinksPanel> {
       );
       final backlinks = await service.backlinksOf(widget.documentId);
       final outgoing = await service.outgoingOf(widget.documentId);
+      final suggestions = await _findSuggestions(titles);
       if (!mounted) {
         return;
       }
       setState(() {
         _backlinks = backlinks;
         _outgoing = outgoing;
+        _suggestions = suggestions;
         _loading = false;
       });
     } catch (e) {
@@ -103,13 +107,56 @@ class _BacklinksPanelState extends State<BacklinksPanel> {
     }
   }
 
+  /// 找"未链接提及"：正文里写了别的页面名，但还没做引用（一键建立双链）。
+  Future<List<UnlinkedMention>> _findSuggestions(
+    Map<String, String> titles,
+  ) async {
+    final editorState = widget.editorState;
+    if (editorState == null || titles.isEmpty) {
+      return const [];
+    }
+    try {
+      return findUnlinkedMentions(
+        document: editorState.document,
+        sourceId: widget.documentId,
+        titles: titles,
+      );
+    } catch (e) {
+      Log.error('[双链] 查找未链接提及失败：$e');
+      return const [];
+    }
+  }
+
+  /// 把正文里的纯文本标题变成真实引用（写进编辑器，由编辑器统一提交内核）。
+  Future<void> _linkMention(UnlinkedMention suggestion) async {
+    final editorState = widget.editorState;
+    if (editorState == null) {
+      return;
+    }
+    final transaction = editorState.transaction
+      ..formatText(
+        suggestion.node,
+        suggestion.start,
+        suggestion.length,
+        MentionBlockKeys.buildMentionPageAttributes(
+          mentionType: MentionType.page,
+          pageId: suggestion.targetId,
+          blockId: null,
+        ),
+      );
+    await editorState.apply(transaction);
+    await _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     if (_loading) {
       return const SizedBox.shrink();
     }
-    final hasLinks = _backlinks.isNotEmpty || _outgoing.isNotEmpty;
+    final hasLinks = _backlinks.isNotEmpty ||
+        _outgoing.isNotEmpty ||
+        _suggestions.isNotEmpty;
 
     if (!hasLinks) {
       return Padding(
@@ -186,8 +233,48 @@ class _BacklinksPanelState extends State<BacklinksPanel> {
               for (final link in _outgoing)
                 _linkTile(theme, link, isBacklink: false),
             ],
+            if (_suggestions.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              _sectionTitle(theme, '可以链接（正文提到但还没引用）'),
+              for (final suggestion in _suggestions)
+                _suggestionTile(theme, suggestion),
+            ],
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _suggestionTile(ThemeData theme, UnlinkedMention suggestion) {
+    return InkWell(
+      onTap: () => unawaited(_linkMention(suggestion)),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+        child: Row(
+          children: [
+            Icon(
+              Icons.add_link,
+              size: 14,
+              color: theme.colorScheme.outline,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                suggestion.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+            Text(
+              '建立引用',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

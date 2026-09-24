@@ -9,6 +9,23 @@ import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 
+/// 一处"还没变成引用的引用"：正文里出现了别的页面标题，但只是纯文本。
+class UnlinkedMention {
+  const UnlinkedMention({
+    required this.node,
+    required this.start,
+    required this.length,
+    required this.targetId,
+    required this.title,
+  });
+
+  final Node node;
+  final int start;
+  final int length;
+  final String targetId;
+  final String title;
+}
+
 /// 装配双链服务：独立业务库里的 `doc_links` / `doc_link_index` 两张表。
 Future<LinkService> createLinkService() async {
   final baseDirectory = await getIt<ApplicationDataStorage>().getPath();
@@ -103,6 +120,60 @@ Future<int> indexDocumentLinks({
     targetTitles: titles ?? const {},
   );
   return refs.length;
+}
+
+/// 在当前打开的文档里找"未链接提及"：正文写了别的页面名，但没做 `@` 引用。
+///
+/// 规则（够用且保守）：
+/// - 只匹配其它页面的标题（长度 ≥ 2），同一篇里同一个标题只提示一次；
+/// - 跳过已经被 `@` 引用的位置（避免重复提示）；
+/// - 优先匹配更长的标题（避免"客户"命中"客户拜访记录"的一半）。
+List<UnlinkedMention> findUnlinkedMentions({
+  required Document document,
+  required String sourceId,
+  required Map<String, String> titles,
+  int minTitleLength = 2,
+  int maxResults = 8,
+}) {
+  final nodes = NodeIterator(
+    document: document,
+    startNode: document.root,
+  ).toList();
+  final inputs = <TextNodeInput>[];
+  final nodeById = <String, Node>{};
+  for (final node in nodes) {
+    final delta = node.delta;
+    if (delta == null || delta.isEmpty) {
+      continue;
+    }
+    nodeById[node.id] = node;
+    inputs.add(
+      TextNodeInput(
+        nodeId: node.id,
+        text: delta.toPlainText(),
+        deltaJson: delta.toJson(),
+      ),
+    );
+  }
+
+  // 匹配逻辑在扩展包里（纯函数），这里只做"编辑器模型 ↔ 纯数据"的转换
+  return findUnlinkedMentionsInNodes(
+    sourceId: sourceId,
+    nodes: inputs,
+    titles: titles,
+    minTitleLength: minTitleLength,
+    maxResults: maxResults,
+  )
+      .map(
+        (ref) => UnlinkedMention(
+          node: nodeById[ref.nodeId]!,
+          start: ref.start,
+          length: ref.length,
+          targetId: ref.targetId,
+          title: ref.title,
+        ),
+      )
+      .toList(growable: false);
 }
 
 /// 全量重建索引：遍历所有文档页面（设置页的"重建双链索引"入口）。

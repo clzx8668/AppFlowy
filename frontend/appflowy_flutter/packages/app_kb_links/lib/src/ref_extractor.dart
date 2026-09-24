@@ -61,3 +61,131 @@ List<PageRef> extractPageRefsFromDelta({
   }
   return refs;
 }
+
+/// 一处"未链接提及"：正文里出现了别的页面标题，但只是纯文本。
+class UnlinkedMentionRef {
+  const UnlinkedMentionRef({
+    required this.nodeId,
+    required this.start,
+    required this.length,
+    required this.targetId,
+    required this.title,
+  });
+
+  final String nodeId;
+  final int start;
+  final int length;
+  final String targetId;
+  final String title;
+}
+
+/// 一段文本节点（供 [findUnlinkedMentionsInNodes] 使用）。
+class TextNodeInput {
+  const TextNodeInput({
+    required this.nodeId,
+    required this.text,
+    required this.deltaJson,
+  });
+
+  final String nodeId;
+  final String text;
+  final List<dynamic> deltaJson;
+}
+
+/// 在若干文本节点里找"可以变成引用的纯文本标题"。
+///
+/// 规则（够用且保守）：
+/// - 只匹配其它页面的标题（长度 ≥ [minTitleLength]），同一个目标页只提示一次；
+/// - 跳过已经被 `@` 引用的区间（避免重复提示）；
+/// - 先匹配更长的标题（避免"客户"命中"客户拜访记录"的一部分）。
+List<UnlinkedMentionRef> findUnlinkedMentionsInNodes({
+  required String sourceId,
+  required List<TextNodeInput> nodes,
+  required Map<String, String> titles,
+  int minTitleLength = 2,
+  int maxResults = 8,
+}) {
+  final candidates = titles.entries
+      .where(
+        (entry) =>
+            entry.key != sourceId &&
+            entry.key.isNotEmpty &&
+            entry.value.trim().length >= minTitleLength,
+      )
+      .map((entry) => (id: entry.key, title: entry.value.trim()))
+      .toList()
+    ..sort((a, b) => b.title.length.compareTo(a.title.length));
+  if (candidates.isEmpty) {
+    return const [];
+  }
+
+  final results = <UnlinkedMentionRef>[];
+  final alreadySuggested = <String>{};
+
+  for (final node in nodes) {
+    if (node.text.isEmpty) {
+      continue;
+    }
+    // 已经是指用的字符区间 + 已经引用过的目标页
+    final mentionedRanges = <(int, int)>[];
+    // 本节点里已经被我们"建议过"的区间：避免同一个片段又被更短的标题命中一次
+    final suggestedRanges = <(int, int)>[];
+    final mentionedTargets = <String>{};
+    var offset = 0;
+    for (final op in node.deltaJson) {
+      if (op is! Map) {
+        continue;
+      }
+      final insert = op['insert'];
+      final length = insert is String ? insert.length : 0;
+      final attributes = op['attributes'];
+      if (attributes is Map) {
+        final mention = attributes[kMentionAttributeKey];
+        if (mention is Map) {
+          mentionedRanges.add((offset, offset + length));
+          final pageId = mention[kMentionPageIdKey];
+          if (pageId is String) {
+            mentionedTargets.add(pageId);
+          }
+        }
+      }
+      offset += length;
+    }
+
+    for (final candidate in candidates) {
+      if (mentionedTargets.contains(candidate.id) ||
+          alreadySuggested.contains(candidate.id)) {
+        continue;
+      }
+      var index = node.text.indexOf(candidate.title);
+      while (index >= 0) {
+        final end = index + candidate.title.length;
+        final overlaps = mentionedRanges.any(
+          (range) => index < range.$2 && end > range.$1,
+        ) ||
+            suggestedRanges.any(
+              (range) => index < range.$2 && end > range.$1,
+            );
+        if (!overlaps) {
+          results.add(
+            UnlinkedMentionRef(
+              nodeId: node.nodeId,
+              start: index,
+              length: candidate.title.length,
+              targetId: candidate.id,
+              title: candidate.title,
+            ),
+          );
+          alreadySuggested.add(candidate.id);
+          suggestedRanges.add((index, end));
+          break;
+        }
+        index = node.text.indexOf(candidate.title, index + 1);
+      }
+      if (results.length >= maxResults) {
+        return results;
+      }
+    }
+  }
+  return results;
+}

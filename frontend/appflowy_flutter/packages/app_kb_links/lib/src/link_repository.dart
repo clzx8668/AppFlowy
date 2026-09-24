@@ -44,6 +44,9 @@ abstract interface class LinkRepository {
   /// 某页的**出链**（我引用了谁）。
   Future<List<DocLink>> outgoingOf(String sourceId);
 
+  /// 全库链接（关系图谱用）。
+  Future<List<DocLink>> all({int limit = 2000});
+
   /// 用最新一次解析结果**替换**某文档的全部出链（幂等）。
   ///
   /// 之所以"全量替换"而不是增量：文档里的提及可能被删除/移动，
@@ -86,6 +89,15 @@ class LinkRepositoryImpl implements LinkRepository {
       'SELECT * FROM $kDocLinkTable WHERE source_id = ? '
       'ORDER BY updated_at DESC;',
       [sourceId],
+    );
+    return rows.map(_fromRow).toList();
+  }
+
+  @override
+  Future<List<DocLink>> all({int limit = 2000}) async {
+    final rows = _db.raw.select(
+      'SELECT * FROM $kDocLinkTable ORDER BY updated_at DESC LIMIT ?;',
+      [limit],
     );
     return rows.map(_fromRow).toList();
   }
