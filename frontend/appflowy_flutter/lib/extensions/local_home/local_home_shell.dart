@@ -120,17 +120,17 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                       ? () => _scaffoldKey.currentState?.openDrawer()
                       : null,
                 ),
-                _CalendarView(
+                CalendarView(
                   workspaceId: widget.workspaceId,
                   userId: widget.userProfile.id,
                   onOpenDrawer: () =>
                       _scaffoldKey.currentState?.openDrawer(),
                 ),
-                _CrmView(
+                CrmView(
                   onOpenDrawer: () =>
                       _scaffoldKey.currentState?.openDrawer(),
                 ),
-                _AiMemoryView(
+                AiMemoryView(
                   containers: _containers,
                   onOpenDrawer: () =>
                       _scaffoldKey.currentState?.openDrawer(),
@@ -367,8 +367,9 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
 /// - 每天一篇内核文档（标题=日期），正文用内核编辑器写；
 /// - 心情/天气/位置存独立业务库，月历上以小色点标记；
 /// - 点某天＝打开（必要时创建）当天日记。
-class _CalendarView extends StatefulWidget {
-  const _CalendarView({
+class CalendarView extends StatefulWidget {
+  const CalendarView({
+    super.key,
     required this.workspaceId,
     required this.userId,
     this.onOpenDrawer,
@@ -379,10 +380,10 @@ class _CalendarView extends StatefulWidget {
   final VoidCallback? onOpenDrawer;
 
   @override
-  State<_CalendarView> createState() => _CalendarViewState();
+  State<CalendarView> createState() => CalendarViewState();
 }
 
-class _CalendarViewState extends State<_CalendarView> {
+class CalendarViewState extends State<CalendarView> {
   DiaryService? _service;
   bool _loading = true;
   late DateTime _month;
@@ -1097,9 +1098,11 @@ class _CalendarViewState extends State<_CalendarView> {
 /// - **离线可用**：本地抽取式摘要（`LocalTextDigester`），不依赖任何外部服务；
 /// - **记忆库**：摘要/标签写进独立业务库（`ai_digests`），原始正文仍在内核文档里；
 /// - **可迭代**：右上角"模型"占位说明后续接大模型（云端 / 本地 Ollama）只需换实现。
-class _AiMemoryView extends StatefulWidget {
-  const _AiMemoryView({
-    required this.containers,
+class AiMemoryView extends StatefulWidget {
+  const AiMemoryView({
+    super.key,
+    // 桌面端入口没有容器列表，因此给默认值（容器列表只用于从"最近内容"里排除容器页）
+    this.containers = const [],
     this.onOpenDrawer,
     this.onOpenDocument,
   });
@@ -1109,10 +1112,10 @@ class _AiMemoryView extends StatefulWidget {
   final Future<void> Function(String viewId)? onOpenDocument;
 
   @override
-  State<_AiMemoryView> createState() => _AiMemoryViewState();
+  State<AiMemoryView> createState() => AiMemoryViewState();
 }
 
-class _AiMemoryViewState extends State<_AiMemoryView> {
+class AiMemoryViewState extends State<AiMemoryView> {
   final TextEditingController _controller = TextEditingController();
 
   AiService? _service;
@@ -2001,16 +2004,16 @@ class _EmptyHint extends StatelessWidget {
 ///
 /// v0 覆盖：客户列表（卡片）、阶段筛选、新建客户、删除；
 /// 后续：跟进流水、客户 ↔ 知识库文档互链、统计漏斗。
-class _CrmView extends StatefulWidget {
-  const _CrmView({this.onOpenDrawer});
+class CrmView extends StatefulWidget {
+  const CrmView({super.key, this.onOpenDrawer});
 
   final VoidCallback? onOpenDrawer;
 
   @override
-  State<_CrmView> createState() => _CrmViewState();
+  State<CrmView> createState() => CrmViewState();
 }
 
-class _CrmViewState extends State<_CrmView> {
+class CrmViewState extends State<CrmView> {
   CrmRepository? _repository;
   List<CrmCustomer> _customers = const [];
   bool _loading = true;

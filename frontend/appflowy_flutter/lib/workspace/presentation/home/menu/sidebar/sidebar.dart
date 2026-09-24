@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/extensions/desktop/local_modules_section.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/search/view_ancestor_cache.dart';
@@ -380,6 +381,10 @@ class _SidebarState extends State<_Sidebar> {
               // new page button
               const SidebarNewPageButton(),
             ],
+
+            // 二次开发：桌面端本地模块入口（日历/日记、CRM、AI 记忆、双链、快照同步）
+            const VSpace(6.0),
+            LocalModulesSection(userProfile: widget.userProfile),
 
             // scrollable document list
             const VSpace(12.0),
