@@ -47,3 +47,6 @@ frontend/*.deb
 .tmp_db*/
 .tmp_shots/
 .tmp_scripts/
+
+# flutter run 调试截图产物（按 s 时生成）
+frontend/appflowy_flutter/flutter_*.png
