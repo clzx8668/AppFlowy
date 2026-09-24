@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_diary_time/app_diary_time.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/base/type_option_menu_item.dart';
@@ -62,6 +63,7 @@ class AddBlockMenuItemBuilder {
       ..._buildCalloutMenuItems(colorMap),
       ..._buildCodeMenuItems(colorMap),
       ..._buildMathEquationMenuItems(colorMap),
+      // 二次开发（暂缓）：自定义块 v0 未通过落库回读验证，先不暴露入口（见 doc/二次开发改动记录.md）
     ];
   }
 
@@ -84,6 +86,32 @@ class AddBlockMenuItemBuilder {
       ..._buildCalloutMenuItems(colorMap),
       ..._buildCodeMenuItems(colorMap),
       ..._buildMathEquationMenuItems(colorMap),
+      // 二次开发（暂缓）：同上
+    ];
+  }
+
+  /// 自定义「生活记录」块（心情/天气/位置），数据写入 block payload。
+  ///
+  /// v0 已实现但**未通过落库回读验证**（重启后块丢失），入口暂时收起；
+  /// 待改造为"标准块类型（如 callout）+ 自定义 payload + 覆写该类型的构建器"后再启用。
+  // ignore: unused_element
+  List<TypeOptionMenuItemValue<String>> _buildLifeMetaMenuItems(
+    Map<String, Color> colorMap,
+  ) {
+    return [
+      TypeOptionMenuItemValue(
+        value: LifeMetaBlockKeys.type,
+        backgroundColor:
+            colorMap[LifeMetaBlockKeys.type] ?? const Color(0x33FFC107),
+        text: '生活记录',
+        icon: FlowySvgs.m_add_block_quote_s,
+        onTap: (_, __) {
+          AppGlobals.rootNavKey.currentContext?.pop(true);
+          Future.delayed(const Duration(milliseconds: 100), () {
+            editorState.insertLifeMetaBlockAt(selection);
+          });
+        },
+      ),
     ];
   }
 

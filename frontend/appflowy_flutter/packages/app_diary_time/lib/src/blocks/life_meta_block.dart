@@ -311,6 +311,11 @@ extension LifeMetaEditorStateExtension on EditorState {
     if (selection == null || !selection.isCollapsed) {
       return;
     }
+    await insertLifeMetaBlockAt(selection);
+  }
+
+  /// 在指定选区位置插入生活记录块（供移动端「+」面板使用）。
+  Future<void> insertLifeMetaBlockAt(Selection selection) async {
     final path = selection.end.path;
     final node = getNodeAtPath(path);
     final delta = node?.delta;
