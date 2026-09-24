@@ -119,6 +119,7 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                     key: ValueKey('flash_${_homeContainer?.viewId}'),
                     workspaceId: widget.workspaceId,
                     userId: widget.userProfile.id,
+                    containerViewId: _homeContainer?.viewId ?? '',
                     containerName: _homeContainer?.name ?? '闪念',
                     onOpenDrawer: () =>
                         _scaffoldKey.currentState?.openDrawer(),
@@ -855,36 +856,12 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
     if (container == null) {
       return;
     }
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('新建${container.name}记录'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '标题（可留空）'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: const Text('创建'),
-          ),
-        ],
-      ),
-    );
-    if (name == null) {
-      return;
-    }
+    // 直接新建一篇普通笔记并进入编辑器（与上游「新建页面」一致：默认标题为空，
+    // 由内核显示为"未命名页面"），不再弹标题输入窗口。
     final result = await ViewBackendService.createView(
       layoutType: ViewLayoutPB.Document,
       parentViewId: container.viewId,
-      name: name.isEmpty ? '未命名页面' : name,
+      name: '',
     );
     final view = result.toNullable();
     if (view == null) {
@@ -1288,12 +1265,14 @@ class _FlashNoteRecordsView extends StatefulWidget {
     super.key,
     required this.workspaceId,
     required this.userId,
+    required this.containerViewId,
     required this.containerName,
     this.onOpenDrawer,
   });
 
   final String workspaceId;
   final Int64 userId;
+  final String containerViewId;
   final String containerName;
   final VoidCallback? onOpenDrawer;
 
@@ -1361,6 +1340,30 @@ class _FlashNoteRecordsViewState extends State<_FlashNoteRecordsView> {
     }
   }
 
+  /// FAB：直接新建一篇普通笔记并进入编辑器（不再弹标题/捕获窗口）。
+  Future<void> _createNote() async {
+    if (widget.containerViewId.isEmpty) {
+      return;
+    }
+    final result = await ViewBackendService.createView(
+      layoutType: ViewLayoutPB.Document,
+      parentViewId: widget.containerViewId,
+      name: '',
+    );
+    final view = result.toNullable();
+    if (view == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('新建失败')));
+      }
+      return;
+    }
+    await _reload();
+    if (mounted) {
+      await context.pushView(view);
+    }
+  }
+
   Future<void> _open(FlashNote note) async {
     final service = _service;
     if (service == null) {
@@ -1406,6 +1409,12 @@ class _FlashNoteRecordsViewState extends State<_FlashNoteRecordsView> {
         ),
         title: Text(widget.containerName),
         actions: [
+          // 顶栏「+」= 直接新建普通笔记（与 FAB 同一动作，便于单手/自动化可达）
+          IconButton(
+            tooltip: '新建笔记',
+            icon: const Icon(Icons.add),
+            onPressed: _createNote,
+          ),
           IconButton(
             tooltip: '闪念速记',
             icon: const Icon(Icons.bolt),
@@ -1414,9 +1423,9 @@ class _FlashNoteRecordsViewState extends State<_FlashNoteRecordsView> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _capture,
+        onPressed: _createNote,
         icon: const Icon(Icons.add),
-        label: const Text('闪念'),
+        label: const Text('新建'),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator.adaptive())
