@@ -1,6 +1,7 @@
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/operations/ai_writer_node_extension.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:app_diary_time/app_diary_time.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:universal_platform/universal_platform.dart';
@@ -29,17 +30,22 @@ List<SelectionMenuItem> slashMenuItemsBuilder({
     if (isInTable) {
       return mobileItemsInTale;
     } else {
-      return mobileItems;
+      // 二次开发：追加自定义「生活记录」块
+      return [...mobileItems, lifeMetaSlashMenuItem()];
     }
   } else {
     if (isInTable) {
       return _simpleTableSlashMenuItems();
     } else {
-      return _defaultSlashMenuItems(
-        isLocalMode: isLocalMode,
-        documentBloc: documentBloc,
-        isEmpty: isEmpty,
-      );
+      // 二次开发：追加自定义「生活记录」块
+      return [
+        ..._defaultSlashMenuItems(
+          isLocalMode: isLocalMode,
+          documentBloc: documentBloc,
+          isEmpty: isEmpty,
+        ),
+        lifeMetaSlashMenuItem(),
+      ];
     }
   }
 }

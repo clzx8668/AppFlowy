@@ -16,3 +16,9 @@ dependencies:
     path: ../appflowy_backend
   appflowy_result:
     path: ../appflowy_result
+  # 自定义块需要编辑器节点/构建器 API（与 App 侧 dependency_overrides 的同一 git 版本）
+  appflowy_editor:
+    git:
+      url: https://github.com/AppFlowy-IO/appflowy-editor.git
+      ref: "470c4e7"
+  provider: ^6.1.1

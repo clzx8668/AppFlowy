@@ -10,6 +10,7 @@ library app_diary_time;
 export 'src/diary_entry.dart';
 export 'src/diary_repository.dart';
 export 'src/diary_service.dart';
+export 'src/blocks/life_meta_block.dart';
 
 /// 模块标识。
 const String kAppDiaryTimePackage = 'app_diary_time';
