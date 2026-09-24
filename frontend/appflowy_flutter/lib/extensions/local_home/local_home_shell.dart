@@ -12,6 +12,7 @@ import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/diary_entry.dart';
 import 'package:appflowy/extensions/ai_entry.dart';
+import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
@@ -332,6 +333,16 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                 builder: (_) => WebDavSettingsPage(
                   workspaceId: widget.workspaceId,
                 ),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.hub_outlined),
+            title: const Text('知识库双链'),
+            subtitle: const Text('反向链接索引：见索引规模、一键重建'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const KbLinksSettingsPage(),
               ),
             ),
           ),

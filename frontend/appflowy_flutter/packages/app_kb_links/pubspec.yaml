@@ -1,0 +1,15 @@
+name: app_kb_links
+description: AppFlowy 二次开发扩展包 —— 真块知识库双链（页面引用索引、反向链接、链接图谱底座）
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.4"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 独立业务库（链接索引表，与内核 Core 库分离）
+  app_biz_store:
+    path: ../app_biz_store

@@ -26,6 +26,8 @@ dependencies:
     path: packages/app_flash_note
   app_webdav_sync:
     path: packages/app_webdav_sync
+  app_kb_links:
+    path: packages/app_kb_links
   any_date: ^1.0.4
   app_links: ^6.3.3
   appflowy_backend:

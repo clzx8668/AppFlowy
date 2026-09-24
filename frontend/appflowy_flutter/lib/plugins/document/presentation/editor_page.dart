@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/extensions/kb_links/backlinks_panel.dart';
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
@@ -351,6 +352,16 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
     final isViewDeleted = context.read<DocumentBloc>().state.isDeleted;
     final isEditable =
         context.read<PageAccessLevelBloc?>()?.state.isEditable ?? true;
+    // 二次开发：双链面板需要文档 id 与标题
+    final documentId = context.read<DocumentBloc>().documentId;
+    // ViewBloc 在个别入口（如独立预览页）可能不在祖先链上，取不到就用空标题，
+    // 面板本身只把标题当展示/索引元数据用，不依赖它。
+    var documentTitle = '';
+    try {
+      documentTitle = context.read<ViewBloc>().state.view.name;
+    } catch (_) {
+      // ignore: 拿不到标题不影响双链功能
+    }
 
     final editor = Directionality(
       textDirection: textDirection,
@@ -387,16 +398,30 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
         autoScrollEdgeOffset: UniversalPlatform.isDesktopOrWeb
             ? 250
             : appFlowyEditorAutoScrollEdgeOffset,
-        footer: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () async {
-            // if the last one isn't a empty node, insert a new empty node.
-            await _focusOnLastEmptyParagraph();
-          },
-          child: SizedBox(
-            width: double.infinity,
-            height: UniversalPlatform.isDesktopOrWeb ? 600 : 400,
-          ),
+        // 二次开发：文档底部追加「双链」面板（反向链接 / 出链），
+        // 复用上游 footer 插槽，不新增挂载点、不改动编辑器内部实现。
+        footer: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isViewDeleted && documentId.isNotEmpty)
+              BacklinksPanel(
+                key: ValueKey('backlinks_$documentId'),
+                documentId: documentId,
+                documentTitle: documentTitle,
+                editorState: widget.editorState,
+              ),
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () async {
+                // if the last one isn't a empty node, insert a new empty node.
+                await _focusOnLastEmptyParagraph();
+              },
+              child: SizedBox(
+                width: double.infinity,
+                height: UniversalPlatform.isDesktopOrWeb ? 600 : 400,
+              ),
+            ),
+          ],
         ),
         dropTargetStyle: AppFlowyDropTargetStyle(
           color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),

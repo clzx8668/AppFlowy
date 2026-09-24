@@ -20,6 +20,7 @@ import 'package:app_ai_ext/app_ai_ext.dart';
 import 'package:app_crm_biz/app_crm_biz.dart';
 import 'package:app_diary_time/app_diary_time.dart';
 import 'package:app_flash_note/app_flash_note.dart';
+import 'package:app_kb_links/app_kb_links.dart';
 import 'package:app_webdav_sync/app_webdav_sync.dart';
 import 'package:appflowy_backend/log.dart';
 
@@ -34,6 +35,7 @@ class ExtensionRegistry {
     kAppCrmBizPackage, // CRM 业务
     kAppWebdavSyncPackage, // WebDAV 快照同步
     kAppAiExtPackage, // AI 扩展
+    kAppKbLinksPackage, // 真块知识库双链（反向链接）
   ];
 
   static bool _registered = false;

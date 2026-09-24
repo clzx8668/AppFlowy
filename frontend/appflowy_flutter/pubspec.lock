@@ -88,6 +88,13 @@ packages:
       relative: true
     source: path
     version: "0.0.1"
+  app_kb_links:
+    dependency: "direct main"
+    description:
+      path: "packages/app_kb_links"
+      relative: true
+    source: path
+    version: "0.0.1"
   app_links:
     dependency: "direct main"
     description:
