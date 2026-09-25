@@ -6,6 +6,7 @@ import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/extensions/calendar_china_days.dart';
+import 'package:appflowy/extensions/calendar_lunar.dart';
 import 'package:appflowy/extensions/when_entry.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy_backend/log.dart';
@@ -47,7 +48,7 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
   late DateTime _month;
   late DateTime _selected;
 
-  /// 0 = 月历，1 = 时间线
+  /// 0 = 月历，1 = 周历，2 = 时间线
   int _segment = 0;
 
   Map<String, DiaryEntry> _entries = {};
@@ -331,6 +332,14 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
                   _daySection(theme),
                   const SizedBox(height: 20),
                   _moodStatsCard(theme),
+                ] else if (_segment == 1) ...[
+                  _weekNavHeader(theme),
+                  const SizedBox(height: 8),
+                  _weekStrip(theme),
+                  const SizedBox(height: 20),
+                  _daySection(theme),
+                  const SizedBox(height: 20),
+                  _moodStatsCard(theme),
                 ] else ...[
                   _moodStatsCard(theme),
                   const SizedBox(height: 16),
@@ -353,9 +362,78 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
       child: Row(
         children: [
           _segmentItem(theme, 0, '月历', Icons.calendar_month_outlined),
-          _segmentItem(theme, 1, '时间线', Icons.timeline_outlined),
+          _segmentItem(theme, 1, '周历', Icons.view_week_outlined),
+          _segmentItem(theme, 2, '时间线', Icons.timeline_outlined),
         ],
       ),
+    );
+  }
+
+  /// 周历：所在周的起止日期 + 左右翻周。
+  DateTime get _weekStart {
+    final monday = _selected.subtract(Duration(days: _selected.weekday - 1));
+    return DateTime(monday.year, monday.month, monday.day);
+  }
+
+  Widget _weekNavHeader(ThemeData theme) {
+    final start = _weekStart;
+    final end = start.add(const Duration(days: 6));
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '${start.month}月${start.day}日 - ${end.month}月${end.day}日',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.chevron_left),
+          onPressed: () {
+            setState(() {
+              _selected = _selected.subtract(const Duration(days: 7));
+              _month = DateTime(_selected.year, _selected.month);
+            });
+            unawaited(_reload());
+          },
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.chevron_right),
+          onPressed: () {
+            setState(() {
+              _selected = _selected.add(const Duration(days: 7));
+              _month = DateTime(_selected.year, _selected.month);
+            });
+            unawaited(_reload());
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _weekStrip(ThemeData theme) {
+    final start = _weekStart;
+    return Row(
+      children: [
+        for (var i = 0; i < 7; i++)
+          Expanded(
+            child: _dayCell(
+              theme,
+              date: start.add(Duration(days: i)),
+              isSelected:
+                  DiaryEntry.keyOf(_selected) ==
+                      DiaryEntry.keyOf(start.add(Duration(days: i))),
+              entry: _entries[DiaryEntry.keyOf(start.add(Duration(days: i)))],
+              hasRecords:
+                  (_recordsByDay[DiaryEntry.keyOf(start.add(Duration(days: i)))] ??
+                          const [])
+                      .isNotEmpty,
+            ),
+          ),
+      ],
     );
   }
 
@@ -496,6 +574,7 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
     final now = DateTime.now();
     final isToday = DiaryEntry.keyOf(now) == DiaryEntry.keyOf(date);
     final chinaDay = chinaDayOfDate(date);
+    final lunar = lunarInfoOf(date);
     final dotColor = entry == null || entry.mood.isEmpty
         ? theme.colorScheme.primary
         : _moodColor(entry.mood, theme);
@@ -536,7 +615,7 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
             ),
           ),
           const SizedBox(height: 1),
-          // 有内容 → 圆点；节假日/调休 → 小字标记（优先显示标记，避免拥挤）
+          // 小字优先级：放假/调休 > 农历节日/节气 > 农历日
           if (chinaDay != null)
             Text(
               chinaDay.isHoliday ? '休' : '班',
@@ -544,6 +623,18 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
                 fontSize: 9,
                 color: chinaDay.isHoliday
                     ? const Color(0xFFE64A19)
+                    : theme.colorScheme.outline,
+              ),
+            )
+          else if (lunar.shortLabel.isNotEmpty)
+            Text(
+              lunar.shortLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 9,
+                color: lunar.isHighlighted
+                    ? theme.colorScheme.primary
                     : theme.colorScheme.outline,
               ),
             )
@@ -578,6 +669,16 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
                     : ' · ${chinaDayOfDate(_selected)!.name}'),
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
+            ),
+          ),
+          // 农历信息（初一/十五/节气/节日）
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              lunarInfoOf(_selected).fullText,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
             ),
           ),
           const SizedBox(height: 10),

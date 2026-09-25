@@ -61,12 +61,18 @@ class RecordsFeedPage extends StatefulWidget {
   State<RecordsFeedPage> createState() => RecordsFeedPageState();
 }
 
-class RecordsFeedPageState extends State<RecordsFeedPage> {
+class RecordsFeedPageState extends State<RecordsFeedPage>
+    with TickerProviderStateMixin {
   List<FeedRecord> _all = const [];
   bool _loading = true;
 
-  /// 当前筛选：分类（容器/子页面名）与标签
-  String _kindFilter = '';
+  /// 顶部标签：用显式 TabController 才能在"滑动切页"后知道当前是哪个分类
+  /// （FAB 新建时要按当前分类决定落点）。
+  TabController? _tabController;
+  List<String> _tabsCache = const ['全部'];
+  int _currentTabIndex = 0;
+
+  /// 当前筛选：标签（分类改由顶部标签页承担）
   final Set<String> _tagFilter = {};
 
   /// 视图形态：列表 / 网格（对齐参考项目的两种卡片）
@@ -92,6 +98,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
 
   @override
   void dispose() {
+    _tabController?.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -137,6 +144,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
         _defaultContainerId = defaultContainer.viewId;
         _loading = false;
       });
+      _syncTabController();
       unawaited(_prefetchSummaries());
     } catch (e) {
       Log.error('[记录流] 加载失败：$e');
@@ -209,14 +217,48 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
           return false;
         }
       }
-      if (_kindFilter.isNotEmpty && record.kind != _kindFilter) {
-        return false;
-      }
       if (_tagFilter.isNotEmpty && !_tagFilter.every(record.tags.contains)) {
         return false;
       }
       return true;
     }).toList(growable: false);
+  }
+
+  /// 标签集合：第 0 个是「全部」，其余是各分类。
+  List<String> get _tabs => ['全部', ..._kinds];
+
+  /// 数据变化后同步 TabController（分类集合变了就重建）。
+  void _syncTabController() {
+    final tabs = _tabs;
+    if (_tabController != null && _tabsCache.join('|') == tabs.join('|')) {
+      return;
+    }
+    final previousIndex = _currentTabIndex;
+    _tabController?.dispose();
+    _tabsCache = tabs;
+    final controller = TabController(
+      length: tabs.length,
+      vsync: this,
+      initialIndex: previousIndex.clamp(0, tabs.length - 1),
+    );
+    controller.addListener(() {
+      if (controller.index != _currentTabIndex && mounted) {
+        setState(() => _currentTabIndex = controller.index);
+      }
+    });
+    _tabController = controller;
+    _currentTabIndex = controller.index;
+  }
+
+  /// 某个标签下的记录（下标 0 = 全部；其余按分类过滤；标签筛选对所有标签生效）。
+  List<FeedRecord> _recordsForTab(int tabIndex) {
+    if (tabIndex >= _tabsCache.length) {
+      return const [];
+    }
+    final kind = tabIndex == 0 ? '' : _tabsCache[tabIndex];
+    return _visible
+        .where((record) => kind.isEmpty || record.kind == kind)
+        .toList(growable: false);
   }
 
   /// 懒加载正文摘要：每次最多并发 3 篇、每轮最多 40 篇，避免一次性读爆内核。
@@ -312,16 +354,17 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
 
   /// 新建落点：选了某个分类 → 该分类的父页面；否则用默认容器。
   ({String id, String kind}) get newRecordTarget {
-    if (_kindFilter.isEmpty) {
+    final kind = _currentTabIndex == 0 ? '' : _tabsCache[_currentTabIndex];
+    if (kind.isEmpty) {
       return (id: _defaultContainerId, kind: TimelineKind.note);
     }
     // 找到该分类对应的父页面（闪念/工作记录/生活日记 优先）
     for (final record in _all) {
-      if (record.kind == _kindFilter) {
-        return (id: record.view.parentViewId, kind: _kindFilter);
+      if (record.kind == kind) {
+        return (id: record.view.parentViewId, kind: kind);
       }
     }
-    return (id: _defaultContainerId, kind: _kindFilter);
+    return (id: _defaultContainerId, kind: kind);
   }
 
   Future<void> _openFilterSheet() async {
@@ -411,7 +454,6 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final visible = _visible;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -468,71 +510,87 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator.adaptive())
+          // 线性滑动标签：下划线指示器跟着滑动，并且可以左右滑动切页
           : Column(
               children: [
-                // 分类 chips（横滑）：点一下=筛选，不再"进层级"
-                SizedBox(
-                  height: 44,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                _corpusTabBar(theme),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
                     children: [
-                      MobFilterChip(
-                        label: '全部',
-                        selected: _kindFilter.isEmpty,
-                        onTap: () => setState(() {
-                          _kindFilter = '';
-                          _tagFilter.clear();
-                        }),
-                      ),
-                      for (final kind in _kinds)
-                        MobFilterChip(
-                          label: kind,
-                          selected: _kindFilter == kind,
-                          onTap: () => setState(() => _kindFilter = kind),
-                        ),
-                      if (_allTags.isNotEmpty)
-                        MobFilterChip(
-                          label: _tagFilter.isEmpty
-                              ? '标签'
-                              : '标签 ${_tagFilter.length}',
-                          leading: '#',
-                          selected: _tagFilter.isNotEmpty,
-                          onTap: () => unawaited(_openFilterSheet()),
-                        ),
+                      for (var i = 0; i < _tabsCache.length; i++)
+                        _tabBody(theme, i),
                     ],
                   ),
                 ),
-                Expanded(
-                  child: visible.isEmpty
-                      ? _emptyState(theme)
-                      : RefreshIndicator(
-                          onRefresh: reload,
-                          child: _gridMode
-                              ? GridView.builder(
-                                  padding: Mob.pagePadding,
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
-                                    mainAxisSpacing: 8,
-                                    crossAxisSpacing: 8,
-                                    childAspectRatio: 1.05,
-                                  ),
-                                  itemCount: visible.length,
-                                  itemBuilder: (context, index) =>
-                                      _recordGridCard(theme, visible[index]),
-                                )
-                              : ListView.separated(
-                                  padding: Mob.pagePadding,
-                                  itemCount: visible.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 8),
-                                  itemBuilder: (context, index) =>
-                                      _recordCard(theme, visible[index]),
-                                ),
-                        ),
-                ),
               ],
+            ),
+    );
+  }
+
+  /// 顶部分类标签（线性 + 下划线指示器，可横滑、可左右滑动切页）。
+  Widget _corpusTabBar(ThemeData theme) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: TabBar(
+        controller: _tabController,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        indicatorSize: TabBarIndicatorSize.label,
+        indicatorWeight: 2.5,
+        indicatorColor: theme.colorScheme.primary,
+        dividerColor: Colors.transparent,
+        labelStyle: theme.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: theme.textTheme.labelLarge,
+        labelColor: theme.colorScheme.primary,
+        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+        tabs: [
+          for (var i = 0; i < _tabsCache.length; i++)
+            Tab(
+              height: 42,
+              text: i == 0 ? '全部 ${_all.length}' : _tabsCache[i],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tabBody(ThemeData theme, int tabIndex) {
+    final records = _recordsForTab(tabIndex);
+    if (records.isEmpty) {
+      return _emptyState(theme);
+    }
+    return RefreshIndicator(
+      onRefresh: reload,
+      child: _gridMode
+          ? GridView.builder(
+              padding: Mob.pagePadding,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 1.05,
+              ),
+              itemCount: records.length,
+              itemBuilder: (context, index) =>
+                  _recordGridCard(theme, records[index]),
+            )
+          : ListView.separated(
+              padding: Mob.pagePadding,
+              itemCount: records.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, index) =>
+                  _recordCard(theme, records[index]),
             ),
     );
   }
