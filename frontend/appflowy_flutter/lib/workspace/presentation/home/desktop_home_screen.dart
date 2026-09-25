@@ -1,5 +1,6 @@
 import 'package:appflowy/features/workspace/data/repositories/rust_workspace_repository_impl.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/extensions/desktop/local_nav_rail.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -193,6 +194,18 @@ class DesktopHomeScreen extends StatelessWidget {
     final notificationPanel = NotificationPanel();
     final sliderHoverTrigger = SliderMenuHoverTrigger();
 
+    // 二次开发：最左边常驻一条**最窄单列图标**导航栏（本地导航三态之一）。
+    //
+    // 为什么常驻：上游侧栏收起后原本是"整块消失"，既没有压缩态、也没有"再展开"的入口；
+    // 常驻后 —— 点顶部图标＝展开/收起上游侧栏（压缩态就只剩这一列 56px），
+    // 点底部图标＝以抽屉形式打开本地导航（图标 + 文字），任何窗口宽度都能用。
+    // 详见 doc/全局完善计划（多轮）.md 第 1 轮。
+    final localRail = LocalNavRail(
+      userId: userProfile.id,
+      menuExpanded: layout.showMenu,
+      onToggleMenu: () => context.read<HomeSettingBloc>().collapseMenu(),
+    );
+
     final homeMenuResizer =
         layout.showMenu ? const SidebarResizer() : const SizedBox.shrink();
     final editPanel = _buildEditPanel(context, layout: layout);
@@ -206,6 +219,8 @@ class DesktopHomeScreen extends StatelessWidget {
       homeMenuResizer: homeMenuResizer,
       notificationPanel: notificationPanel,
       sliderHoverTrigger: sliderHoverTrigger,
+      localRail: localRail,
+      localRailWidth: LocalNavRail.railWidth,
     );
   }
 
@@ -259,6 +274,8 @@ class DesktopHomeScreen extends StatelessWidget {
     required Widget homeMenuResizer,
     required Widget notificationPanel,
     required Widget sliderHoverTrigger,
+    required Widget localRail,
+    required double localRailWidth,
   }) {
     final isSliderbarShowing = layout.showMenu;
     return Stack(
@@ -266,7 +283,7 @@ class DesktopHomeScreen extends StatelessWidget {
         homeStack
             .constrained(minWidth: 500)
             .positioned(
-              left: layout.homePageLOffset,
+              left: layout.homePageLOffset + localRailWidth,
               right: layout.homePageROffset,
               bottom: 0,
               top: 0,
@@ -297,22 +314,38 @@ class DesktopHomeScreen extends StatelessWidget {
               duration: layout.animDuration.inMilliseconds * 0.001,
             )
             .positioned(
-              left: isSliderbarShowing ? layout.menuWidth : 0,
+              left: isSliderbarShowing
+                  ? layout.menuWidth + localRailWidth
+                  : localRailWidth,
               top: isSliderbarShowing ? 0 : 52,
               width: layout.notificationPanelWidth,
               bottom: 0,
             ),
         sidebar
             .animatedPanelX(
-              closeX: -layout.menuWidth,
+              // 侧栏收起时要滑到"图标栏左边"以外，否则会残留一条压在图标栏上
+              closeX: -(layout.menuWidth + localRailWidth),
               isClosed: !isSliderbarShowing,
               curve: Curves.easeOutQuad,
               duration: layout.animDuration.inMilliseconds * 0.001,
             )
-            .positioned(left: 0, top: 0, width: layout.menuWidth, bottom: 0),
+            .positioned(
+              left: localRailWidth,
+              top: 0,
+              width: layout.menuWidth,
+              bottom: 0,
+            ),
         homeMenuResizer
-            .positioned(left: layout.menuWidth)
+            .positioned(left: layout.menuWidth + localRailWidth)
             .animate(layout.animDuration, Curves.easeOutQuad),
+        // 最窄单列图标导航栏：放在 Stack 最后 = 最上层，
+        // 保证它不会被侧栏/通知面板的滑动层盖住（否则点不到）。
+        localRail.positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: LocalNavRail.railWidth,
+        ),
       ],
     );
   }

@@ -117,9 +117,9 @@ class _LocalModulesSectionState extends State<LocalModulesSection> {
             icon: FlowySvgs.calendar_s,
             label: '日历 · 日记',
             onTap: () => open(
-          CalendarView(
-              workspaceId: workspaceId,
-              userId: widget.userProfile.id,
+              CalendarView(
+                workspaceId: workspaceId,
+                userId: widget.userProfile.id,
               ),
             ),
           ),
