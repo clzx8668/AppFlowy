@@ -66,6 +66,9 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
   String _kindFilter = '';
   final Set<String> _tagFilter = {};
 
+  /// 视图形态：列表 / 网格（对齐参考项目的两种卡片）
+  bool _gridMode = false;
+
   /// 新建落点：当前筛选对应的父页面 id（"全部"时为空 → 用默认容器）
   String _defaultContainerId = '';
 
@@ -331,6 +334,11 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
             ),
             onPressed: () => unawaited(_openFilterSheet()),
           ),
+          IconButton(
+            tooltip: _gridMode ? '列表视图' : '网格视图',
+            icon: Icon(_gridMode ? Icons.view_list_outlined : Icons.grid_view),
+            onPressed: () => setState(() => _gridMode = !_gridMode),
+          ),
         ],
       ),
       body: _loading
@@ -375,14 +383,28 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
                       ? _emptyState(theme)
                       : RefreshIndicator(
                           onRefresh: reload,
-                          child: ListView.separated(
-                            padding: Mob.pagePadding,
-                            itemCount: visible.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 8),
-                            itemBuilder: (context, index) =>
-                                _recordCard(theme, visible[index]),
-                          ),
+                          child: _gridMode
+                              ? GridView.builder(
+                                  padding: Mob.pagePadding,
+                                  gridDelegate:
+                                      const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    mainAxisSpacing: 8,
+                                    crossAxisSpacing: 8,
+                                    childAspectRatio: 1.05,
+                                  ),
+                                  itemCount: visible.length,
+                                  itemBuilder: (context, index) =>
+                                      _recordGridCard(theme, visible[index]),
+                                )
+                              : ListView.separated(
+                                  padding: Mob.pagePadding,
+                                  itemCount: visible.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 8),
+                                  itemBuilder: (context, index) =>
+                                      _recordCard(theme, visible[index]),
+                                ),
                         ),
                 ),
               ],
@@ -474,6 +496,68 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 网格卡片：对齐参考项目的 `GirdDiaryCardComponent`
+  /// （圆角卡片 + 左侧内容 + 底部"时间 + 类型"一行）。
+  Widget _recordGridCard(ThemeData theme, FeedRecord record) {
+    return MobCard(
+      onTap: () => unawaited(_open(record)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                record.kindIcon,
+                size: 14,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  record.kind,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: Text(
+              record.title,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _formatTime(record.time),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (record.tags.isNotEmpty)
+            Text(
+              record.tags.take(3).map((t) => '#$t').join('  '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
         ],
       ),
     );

@@ -16,6 +16,7 @@ import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
+import 'package:appflowy/extensions/local_home/mobile_theme.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
@@ -86,6 +87,8 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
       });
       // 二次开发：初始化「时间线」数据库（挂在日历分类容器下）并回填历史日记
       unawaited(_initTimeline());
+      // 手机端主题色（参考项目配色）恢复上次选择
+      unawaited(MobThemeController.load());
     } catch (e) {
       Log.error('[本地首页] 容器加载失败：$e');
       if (mounted) {
@@ -241,6 +244,13 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // 手机端外壳整体套一层"参考项目配色"（未选择时等于原样）
+    return MobTheme(
+      child: _buildScaffold(context),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
       drawer: _buildDrawer(context),
@@ -486,6 +496,17 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                 builder: (_) => const KbLinksSettingsPage(),
               ),
             ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('主题色'),
+            subtitle: Text(
+              MobThemeController.accentIndex.value == null
+                  ? '跟随系统'
+                  : MobPalette.options[MobThemeController.accentIndex.value!]
+                      .name,
+            ),
+            onTap: () => unawaited(showMobPaletteSheet(context)),
           ),
           ListTile(
             leading: const Icon(Icons.settings_outlined),
