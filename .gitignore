@@ -48,5 +48,8 @@ frontend/*.deb
 .tmp_shots/
 .tmp_scripts/
 
+# 清库/迁移前的本地备份
+.backup-*/
+
 # flutter run 调试截图产物（按 s 时生成）
 frontend/appflowy_flutter/flutter_*.png
