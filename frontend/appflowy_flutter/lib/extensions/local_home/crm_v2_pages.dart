@@ -223,13 +223,80 @@ class _CrmHomePageState extends State<CrmHomePage>
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator.adaptive())
-          : TabBarView(
-              controller: _tabController,
+          : Column(
               children: [
-                for (final type in CrmEntityType.all) _entityList(theme, type),
+                // 「今天该跟进」横条（设计定稿第 2 节）：只在默认的「客户」标签上方，
+                // 不挤占其他标签的列表空间。
+                if (_tabController.index == _defaultTabIndex &&
+                    (_insights?.followUps().isNotEmpty ?? false))
+                  CrmFollowUpBar(
+                    items: _insights!.followUps(),
+                    onOpen: _openEntity,
+                    onComplete: (item) => _snooze(item, days: 1),
+                    onPostpone: (item) => _snooze(item, days: 3),
+                  ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      for (final type in CrmEntityType.all)
+                        _entityList(theme, type),
+                    ],
+                  ),
+                ),
               ],
             ),
     );
+  }
+
+  /// 「推迟 / 完成」：只写实体的扩展字段 `extra.snooze_until`（不改数据库结构）。
+  ///
+  /// - 完成 → 明天再看（若原来是手动 ⭐ 标记，顺手清掉标记）；
+  /// - 推迟 → [days] 天后再提醒。
+  Future<void> _snooze(CrmFollowUp item, {required int days}) async {
+    final repository = _repository;
+    if (repository == null) {
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    final entity = item.entity;
+    final until = DateTime.now().add(Duration(days: days));
+    final extra = Map<String, String>.of(entity.extra)
+      ..[CrmInsights.snoozeKey] = formatCrmDate(until);
+    if (item.reason == CrmFollowUpReason.manual) {
+      extra.remove(CrmInsights.followUpKey);
+    }
+    await repository.upsert(
+      entity.copyWith(extra: extra, updatedAt: DateTime.now()),
+    );
+    await _reload();
+    final title =
+        entity.title.isEmpty ? CrmEntityType.label(entity.type) : entity.title;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(days <= 1 ? '今天完成了：$title' : '已推迟 $days 天：$title'),
+          action: SnackBarAction(
+            label: '撤销',
+            onPressed: () => unawaited(_unsnooze(entity)),
+          ),
+        ),
+      );
+  }
+
+  /// 撤销「推迟 / 完成」。
+  Future<void> _unsnooze(CrmEntity entity) async {
+    final repository = _repository;
+    if (repository == null) {
+      return;
+    }
+    final extra = Map<String, String>.of(entity.extra)
+      ..remove(CrmInsights.snoozeKey);
+    await repository.upsert(
+      entity.copyWith(extra: extra, updatedAt: DateTime.now()),
+    );
+    await _reload();
   }
 
   Widget _entityList(ThemeData theme, String type) {
@@ -519,9 +586,7 @@ Future<CrmEntity?> showCrmEntitySheet({
   final presetDefs = presetFieldsOf(type);
   final presetControllers = <String, TextEditingController>{
     for (final def in presetDefs)
-      if (def.type != 'date' &&
-          def.type != 'datetime' &&
-          def.type != 'select')
+      if (def.type != 'date' && def.type != 'datetime' && def.type != 'select')
         def.key: TextEditingController(),
   };
   final presetDates = <String, DateTime?>{};
@@ -653,10 +718,13 @@ Future<CrmEntity?> showCrmEntitySheet({
                       children: [
                         Text(
                           def.label.isEmpty ? def.key : def.label,
-                          style: Theme.of(sheetContext).textTheme.labelSmall
+                          style: Theme.of(sheetContext)
+                              .textTheme
+                              .labelSmall
                               ?.copyWith(
-                            color: Theme.of(sheetContext).colorScheme.outline,
-                          ),
+                                color:
+                                    Theme.of(sheetContext).colorScheme.outline,
+                              ),
                         ),
                         const SizedBox(height: 6),
                         Wrap(
@@ -732,9 +800,8 @@ Future<CrmEntity?> showCrmEntitySheet({
         if (entry.value != null)
           entry.key: formatCrmDate(
             entry.value!,
-            withTime:
-                presetDefs.firstWhere((d) => d.key == entry.key).type ==
-                    'datetime',
+            withTime: presetDefs.firstWhere((d) => d.key == entry.key).type ==
+                'datetime',
           ),
       for (final entry in presetSelects.entries)
         if (entry.value.isNotEmpty) entry.key: entry.value,

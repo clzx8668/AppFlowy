@@ -555,4 +555,5 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
 };
 
 /// 取某类实体的预置字段。
-List<CrmFieldDef> presetFieldsOf(String type) => kCrmPresetFields[type] ?? const [];
+List<CrmFieldDef> presetFieldsOf(String type) =>
+    kCrmPresetFields[type] ?? const [];

@@ -39,6 +39,13 @@ class CrmInsights {
     CrmEntityType.receivable: 14,
   };
 
+  /// 手动「⭐ 今天要跟进」标记：存在实体 `extra` 里的日期（`yyyy-MM-dd`）。
+  static const String followUpKey = 'follow_up_at';
+
+  /// 「推迟到某天」：`extra.snooze_until`（`yyyy-MM-dd`），该日之前不再出现在清单里。
+  /// 用的是现成的扩展字段机制，**不改数据库结构**。
+  static const String snoozeKey = 'snooze_until';
+
   /// 各类型的**终态阶段**：到了这里就不再提醒跟进。
   static const Map<String, List<String>> closedStages = {
     CrmEntityType.lead: ['已转项目', '已丢弃'],
@@ -52,6 +59,9 @@ class CrmInsights {
   CrmEntity? byId(String id) => _byId[id];
 
   List<CrmEntity> ofType(String type) => _byType[type] ?? const <CrmEntity>[];
+
+  /// 全部实体（"今天该跟进"要跨类型扫）。
+  List<CrmEntity> get all => _byId.values.toList(growable: false);
 
   /// 该实体的最近一条跟踪记录（没有则 null）。
   CrmEvent? latestEventOf(String entityId) => _latestEvents[entityId];
@@ -129,6 +139,107 @@ class CrmInsights {
     return daysSinceInteraction(entity) > threshold;
   }
 
+  /// 关键日期距离今天多少天（**含到期当天**：0 = 今天到期，>0 = 已逾期多少天）。
+  /// 无关键日期 / 终态 → null。
+  int? keyDateDueDays(CrmEntity entity) {
+    final eventTime = entity.eventTime;
+    if (eventTime == null || isClosed(entity)) {
+      return null;
+    }
+    final days = _today.difference(dateOnly(eventTime)).inDays;
+    return days >= 0 ? days : null;
+  }
+
+  /// 手动标记「今天要跟进」的日期（没标记 / 标记在未来 → null）。
+  DateTime? manualFollowUpAt(CrmEntity entity) {
+    final raw = entity.extra[followUpKey]?.trim() ?? '';
+    if (raw.isEmpty) {
+      return null;
+    }
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) {
+      // 值不是日期（例如手写的 "1"）也当"今天要跟进"，避免静默丢失用户标记。
+      return _today;
+    }
+    final day = dateOnly(parsed);
+    return day.isAfter(_today) ? null : day;
+  }
+
+  /// 手动标记为"今天要跟进"？
+  bool isManuallyFlagged(CrmEntity entity) => manualFollowUpAt(entity) != null;
+
+  /// 是否被"推迟"到今天之后（`extra.snooze_until`）。
+  bool isSnoozed(CrmEntity entity) {
+    final raw = entity.extra[snoozeKey]?.trim() ?? '';
+    if (raw.isEmpty) {
+      return false;
+    }
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) {
+      return false;
+    }
+    return dateOnly(parsed).isAfter(_today);
+  }
+
+  /// **「今天该跟进」清单**（设计定稿第 2 节的三条规则）。
+  ///
+  /// 每条实体最多出现一次，命中的规则取其中优先级最高的：
+  /// 手动标记 > 关键日期到期/逾期 > 久未跟进。
+  /// 排序：手动标记 → 逾期最久 → 久未跟进天数最多。
+  List<CrmFollowUp> followUps() {
+    final items = <CrmFollowUp>[];
+    for (final entity in all) {
+      if (isClosed(entity) || isSnoozed(entity)) {
+        continue;
+      }
+      final manual = manualFollowUpAt(entity);
+      if (manual != null) {
+        final days = _today.difference(manual).inDays;
+        items.add(
+          CrmFollowUp(
+            entity: entity,
+            reason: CrmFollowUpReason.manual,
+            detail: days > 0 ? '标记后已过 $days 天' : '手动标记',
+            days: days,
+          ),
+        );
+        continue;
+      }
+      final due = keyDateDueDays(entity);
+      if (due != null) {
+        items.add(
+          CrmFollowUp(
+            entity: entity,
+            reason: CrmFollowUpReason.overdue,
+            detail: due == 0 ? '关键日期今天到期' : '关键日期已逾期 $due 天',
+            days: due,
+          ),
+        );
+        continue;
+      }
+      if (isStale(entity)) {
+        final days = daysSinceInteraction(entity);
+        items.add(
+          CrmFollowUp(
+            entity: entity,
+            reason: CrmFollowUpReason.stale,
+            detail: '$days 天没联系了',
+            days: days,
+          ),
+        );
+      }
+    }
+    items.sort((a, b) {
+      final byReason = a.reason.weight.compareTo(b.reason.weight);
+      if (byReason != 0) {
+        return byReason;
+      }
+      final byDays = b.days.compareTo(a.days);
+      return byDays != 0 ? byDays : a.entity.title.compareTo(b.entity.title);
+    });
+    return items;
+  }
+
   // ------------------------------------------------------------ 内部实现
 
   /// 客户 → 名下实体 的索引（项目 / 合同 / 收款，含"合同挂在项目上"的两级情况）。
@@ -171,6 +282,45 @@ class CrmInsights {
 
 /// 去掉时分秒（比较"天"时用；也避免夏令时/时区带来的半天误差）。
 DateTime dateOnly(DateTime time) => DateTime(time.year, time.month, time.day);
+
+/// 「今天该跟进」的命中原因（排序优先级＝枚举顺序）。
+enum CrmFollowUpReason {
+  /// 手动 ⭐ 标记（`extra.follow_up_at`）—— 用户说了算，排最前。
+  manual(0, '已标记'),
+
+  /// 关键日期到期/逾期。
+  overdue(1, '临近'),
+
+  /// 超过该类型的久未跟进阈值。
+  stale(2, '久未跟进');
+
+  const CrmFollowUpReason(this.weight, this.label);
+
+  /// 排序权重（小者优先）。
+  final int weight;
+
+  /// 简短标签（横条上用）。
+  final String label;
+}
+
+/// 「今天该跟进」的一条待办。
+class CrmFollowUp {
+  const CrmFollowUp({
+    required this.entity,
+    required this.reason,
+    required this.detail,
+    required this.days,
+  });
+
+  final CrmEntity entity;
+  final CrmFollowUpReason reason;
+
+  /// 一句话原因（「关键日期已逾期 3 天」「45 天没联系了」）。
+  final String detail;
+
+  /// 排序次键：越久越靠前（逾期天数 / 未跟进天数 / 标记后过了几天）。
+  final int days;
+}
 
 /// 列表排序口径（设计定稿第 1 节）：
 /// - **客户**：按最近互动时间倒序（从未互动过的回落到更新时间），顺序稳定、不跳动；

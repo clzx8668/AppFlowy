@@ -103,7 +103,9 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
         .toList();
     final derivedReceivables = (byType[CrmEntityType.receivable] ?? const [])
         .where(
-          (r) => r.contractId == entity.id || r.projectId == entity.id ||
+          (r) =>
+              r.contractId == entity.id ||
+              r.projectId == entity.id ||
               r.customerId == entity.id,
         )
         .toList();
@@ -584,15 +586,18 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                           apply: (c, v) => c.copyWith(title: v),
                         ),
                       ),
+                      // ⭐「今天要跟进」：写实体的扩展字段 `extra.follow_up_at`
+                      //（现成机制，不改数据库结构），首页那条横条据此排最前。
+                      _followUpToggle(theme, entity),
                       _fieldRow(
                         theme,
                         '摘要',
                         entity.subtitle,
                         () => _editText(
-                                label: '摘要',
-                                current: entity.subtitle,
-                                apply: (c, v) => c.copyWith(subtitle: v),
-                              ),
+                          label: '摘要',
+                          current: entity.subtitle,
+                          apply: (c, v) => c.copyWith(subtitle: v),
+                        ),
                       ),
                       // 负责人：个人使用场景默认隐藏（数据库列保留，便于将来多人协作）
                       // 电话已作为「预置字段」放在下方字段区（非必填）
@@ -824,6 +829,73 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
     );
   }
 
+  /// ⭐「今天要跟进」开关（设计定稿第 2 节第 3 条规则）。
+  Widget _followUpToggle(ThemeData theme, CrmEntity entity) {
+    final flagged =
+        entity.extra[CrmInsights.followUpKey]?.trim().isNotEmpty ?? false;
+    final snoozed = entity.extra[CrmInsights.snoozeKey]?.trim() ?? '';
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => unawaited(_toggleFollowUp(!flagged)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Icon(
+              flagged ? Icons.star : Icons.star_border,
+              size: 18,
+              color: flagged
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outline,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '今天要跟进',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+            if (snoozed.isNotEmpty)
+              Text(
+                '已推迟到 $snoozed',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            Switch(
+              value: flagged,
+              onChanged: (on) => unawaited(_toggleFollowUp(on)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 写入 / 清除 ⭐ 标记。打开时顺手清掉"推迟"，让提醒立刻生效。
+  Future<void> _toggleFollowUp(bool on) async {
+    final entity = _entity;
+    if (entity == null) {
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    final extra = Map<String, String>.of(entity.extra);
+    if (on) {
+      extra[CrmInsights.followUpKey] = formatCrmDate(DateTime.now());
+      extra.remove(CrmInsights.snoozeKey);
+    } else {
+      extra.remove(CrmInsights.followUpKey);
+    }
+    await _save(entity.copyWith(extra: extra));
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(on ? '已加入「今天该跟进」，会排在横条最前' : '已取消跟进标记'),
+        ),
+      );
+  }
+
   Widget _sectionHeader(
     ThemeData theme,
     String title,
@@ -873,10 +945,14 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
               ),
               const Spacer(),
               TextButton.icon(
-                onPressed: _digesting ? null : () => unawaited(_generateDigest()),
+                onPressed:
+                    _digesting ? null : () => unawaited(_generateDigest()),
                 icon: const Icon(Icons.refresh, size: 16),
-                label: Text(_digesting ? '生成中…' : (digest == null ? '生成摘要' : '更新摘要')),
-                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                label: Text(
+                  _digesting ? '生成中…' : (digest == null ? '生成摘要' : '更新摘要'),
+                ),
+                style:
+                    TextButton.styleFrom(visualDensity: VisualDensity.compact),
               ),
             ],
           ),
@@ -1275,8 +1351,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
               CrmEntityType.customer,
               (picked) => entity.copyWith(customerId: picked.id),
             ),
-            onRemove: (_) async =>
-                _save(entity.copyWith(customerId: '')),
+            onRemove: (_) async => _save(entity.copyWith(customerId: '')),
           );
         }
         break;
@@ -1531,9 +1606,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                   dense: true,
                   leading: const Icon(Icons.business_outlined),
                   title: Text(item.title.isEmpty ? '未命名' : item.title),
-                  subtitle: item.subtitle.isEmpty
-                      ? null
-                      : Text(item.subtitle),
+                  subtitle: item.subtitle.isEmpty ? null : Text(item.subtitle),
                   onTap: () => Navigator.of(sheetContext).pop(item),
                 ),
             ],

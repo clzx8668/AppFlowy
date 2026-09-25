@@ -37,10 +37,8 @@ class FeedRecord {
 
   /// 创建时间（默认排序用它 —— 只看不改内容就不会因为"打开过"而换位置）。
   DateTime get createdAt => DateTime.fromMillisecondsSinceEpoch(
-        (view.createTime == Int64.ZERO
-                ? view.lastEdited
-                : view.createTime)
-            .toInt() *
+        (view.createTime == Int64.ZERO ? view.lastEdited : view.createTime)
+                .toInt() *
             1000,
       );
 
@@ -85,7 +83,10 @@ class RecordsFeedPage extends StatefulWidget {
 
 class RecordsFeedPageState extends State<RecordsFeedPage>
     with TickerProviderStateMixin {
-  List<FeedRecord> _all = const [];
+  /// 记录全集。**必须是可增长的列表**：`_applySort` 会就地排序，
+  /// 之前用 `const []` 初始化导致启动时排序抛
+  /// 「Unsupported operation: Cannot modify an unmodifiable list」。
+  List<FeedRecord> _all = [];
   bool _loading = true;
 
   /// 顶部标签：用显式 TabController 才能在"滑动切页"后知道当前是哪个分类
@@ -186,7 +187,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
         return;
       }
       setState(() {
-        _all = records;
+        _all = List<FeedRecord>.of(records);
         _defaultContainerId = defaultContainer.viewId;
         _loading = false;
       });
@@ -228,8 +229,10 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
           case ContainerModule.note:
             return ('笔记', Icons.description_outlined);
           default:
-            return (container.name.isEmpty ? '其他' : container.name,
-                Icons.folder_outlined);
+            return (
+              container.name.isEmpty ? '其他' : container.name,
+              Icons.folder_outlined
+            );
         }
       }
     }
@@ -304,7 +307,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
     final kind = tabIndex == 0 ? '' : _tabsCache[tabIndex];
     return _visible
         .where((record) => kind.isEmpty || record.kind == kind)
-        .toList(growable: false);
+        .toList();
   }
 
   void _applySort(List<FeedRecord> records) {
@@ -368,7 +371,8 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
   /// 读一篇文档的正文前 80 字（失败返回空串）。
   Future<String> _summaryOfDocument(String documentId) async {
     try {
-      final result = await DocumentService().getDocument(documentId: documentId);
+      final result =
+          await DocumentService().getDocument(documentId: documentId);
       final document = result.fold((s) => s.toDocument(), (f) => null);
       if (document == null) {
         return '';
@@ -472,8 +476,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
                             dense: true,
                             value: selected.contains(tag),
                             title: Text('#$tag'),
-                            controlAffinity:
-                                ListTileControlAffinity.leading,
+                            controlAffinity: ListTileControlAffinity.leading,
                             onChanged: (value) => setSheetState(() {
                               if (value == true) {
                                 selected.add(tag);
@@ -913,9 +916,8 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
   String _formatTime(DateTime time) {
     final now = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
-    final sameDay = time.year == now.year &&
-        time.month == now.month &&
-        time.day == now.day;
+    final sameDay =
+        time.year == now.year && time.month == now.month && time.day == now.day;
     if (sameDay) {
       return '今天 ${two(time.hour)}:${two(time.minute)}';
     }
