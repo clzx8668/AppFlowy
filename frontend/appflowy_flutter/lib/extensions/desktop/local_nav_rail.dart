@@ -11,6 +11,8 @@ import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace/workspace_service.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
@@ -140,12 +142,7 @@ class _RailPageIcons extends StatelessWidget {
               endIndent: 12,
               color: Theme.of(context).colorScheme.outlineVariant,
             ),
-            for (final view in views)
-              _RailIcon(
-                icon: FlowySvgs.document_s,
-                tooltip: view.name.isEmpty ? '未命名' : view.name,
-                onTap: () => unawaited(openViewInContent(context, view)),
-              ),
+            for (final view in views) _RailViewIcon(view: view),
           ],
         );
       },
@@ -341,6 +338,42 @@ class LocalNavDrawer extends StatelessWidget {
                   },
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 动态一级页面的图标：优先用页面自己的 emoji，没有则用该页面类型的默认图标
+/// —— 与展开态侧栏 `view_item.dart` 的取法完全一致。
+class _RailViewIcon extends StatelessWidget {
+  const _RailViewIcon({required this.view});
+
+  final ViewPB view;
+
+  @override
+  Widget build(BuildContext context) {
+    final iconData = view.icon.toEmojiIconData();
+    final child = iconData.isNotEmpty
+        ? RawEmojiIconWidget(
+            emoji: iconData,
+            emojiSize: 16.0,
+            lineHeight: 18.0 / 16.0,
+          )
+        : Opacity(opacity: 0.6, child: view.defaultIcon());
+    return Tooltip(
+      message: view.name.isEmpty ? '未命名' : view.name,
+      waitDuration: const Duration(milliseconds: 300),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => unawaited(openViewInContent(context, view)),
+            child: SizedBox(width: 40, height: 40, child: Center(child: child)),
           ),
         ),
       ),
