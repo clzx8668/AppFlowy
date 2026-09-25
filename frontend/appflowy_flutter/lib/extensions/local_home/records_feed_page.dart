@@ -83,6 +83,18 @@ class RecordsFeedPage extends StatefulWidget {
 
 class RecordsFeedPageState extends State<RecordsFeedPage>
     with TickerProviderStateMixin {
+  /// 主标题行下面那行浅色小字：条数 / 搜索范围摘要（参照 moodiaryCRM 首页标题行）。
+  String _titleSubtitle() {
+    final count = _all.length;
+    if (_query.isNotEmpty) {
+      return '搜索「$_query」 · $count 条';
+    }
+    if (count == 0) {
+      return '还没有内容';
+    }
+    return '共 $count 条';
+  }
+
   /// 记录全集。**必须是可增长的列表**：`_applySort` 会就地排序，
   /// 之前用 `const []` 初始化导致启动时排序抛
   /// 「Unsupported operation: Cannot modify an unmodifiable list」。
@@ -624,7 +636,13 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
                 ),
                 onChanged: (value) => setState(() => _query = value.trim()),
               )
-            : const Text('记录'),
+            // 主标题行参照 moodiaryCRM 首页「通栏固定标题行」：
+            // 两行文字（大标题 + 一行浅色小字）＋ 右侧动作，高度紧凑。
+            : MobTitleRow(
+                icon: Icons.article_outlined,
+                title: '记录',
+                subtitle: _titleSubtitle(),
+              ),
         actions: [
           if (_searching)
             IconButton(

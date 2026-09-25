@@ -32,10 +32,19 @@ class Mob {
 /// 参照 `E:\Dev\moodiaryCRM` 首页顶栏的做法：一个图标 + 一个标题，
 /// 不再把功能按钮堆在标题旁边（需要时收进「更多」）。
 class MobTitleRow extends StatelessWidget {
-  const MobTitleRow({super.key, required this.icon, required this.title});
+  const MobTitleRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+  });
 
   final IconData icon;
   final String title;
+
+  /// 标题下面的一行浅色小字（参照 moodiaryCRM 首页的"一言"位置，
+  /// 我们用来显示条数 / 当前范围之类的摘要）。为空则只显示标题。
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -45,10 +54,31 @@ class MobTitleRow extends StatelessWidget {
       children: [
         Icon(icon, size: 20, color: theme.colorScheme.onSurface),
         const SizedBox(width: 8),
-        Text(
-          title,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w600,
+        // 与 moodiaryCRM 一致：标题在上一行、浅色小字在下一行
+        Flexible(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (subtitle != null && subtitle!.isNotEmpty)
+                Text(
+                  subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
           ),
         ),
       ],
