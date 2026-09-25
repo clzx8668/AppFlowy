@@ -19,6 +19,7 @@ import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/extensions/local_home/mobile_theme.dart';
 import 'package:appflowy/extensions/local_home/ios_calendar_page.dart';
 import 'package:appflowy/extensions/local_home/mob_sliding_tabs.dart';
+import 'package:appflowy/extensions/local_home/crm_customer_detail_page.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
@@ -2421,6 +2422,14 @@ class CrmViewState extends State<CrmView> with TickerProviderStateMixin {
                               return _RecordCard(
                                 margin:
                                     const EdgeInsets.symmetric(vertical: 4),
+                                // 点开客户详情（编辑档案 / 阶段 / 跟进记录）
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => CrmCustomerDetailPage(
+                                      customerId: customer.id,
+                                    ),
+                                  ),
+                                ),
                                 child: Row(
                                   children: [
                                     CircleAvatar(

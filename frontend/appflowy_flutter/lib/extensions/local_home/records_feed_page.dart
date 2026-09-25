@@ -5,6 +5,7 @@ import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/local_home/mob_sliding_tabs.dart';
+import 'package:appflowy/extensions/local_home/mob_prefs.dart';
 import 'package:appflowy/extensions/page_tags.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
@@ -117,7 +118,28 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
   @override
   void initState() {
     super.initState();
+    unawaited(_loadPrefs());
     unawaited(reload());
+  }
+
+  /// 恢复上次的排序与视图（默认：创建时间 ↓ + 列表）。
+  Future<void> _loadPrefs() async {
+    final sortIndex = await MobPrefs.readSortIndex();
+    final grid = await MobPrefs.readGridMode();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      if (sortIndex != null &&
+          sortIndex >= 0 &&
+          sortIndex < FeedSort.values.length) {
+        _sort = FeedSort.values[sortIndex];
+      }
+      if (grid != null) {
+        _gridMode = grid;
+      }
+      _applySort(_all);
+    });
   }
 
   @override
@@ -304,6 +326,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
       _sort = sort;
       _applySort(_all);
     });
+    unawaited(MobPrefs.writeSortIndex(sort.index));
   }
 
   /// 懒加载正文摘要：每次最多并发 3 篇、每轮最多 40 篇，避免一次性读爆内核。
@@ -537,6 +560,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
                 title: Text(_gridMode ? '切换为列表视图' : '切换为网格视图'),
                 onTap: () {
                   setState(() => _gridMode = !_gridMode);
+                  unawaited(MobPrefs.writeGridMode(_gridMode));
                   Navigator.of(sheetContext).pop();
                 },
               ),
@@ -733,6 +757,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
   Widget _recordCard(ThemeData theme, FeedRecord record) {
     return MobCard(
       onTap: () => unawaited(_open(record)),
+      onLongPress: () => unawaited(_showRecordActions(record)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -815,6 +840,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
   Widget _recordGridCard(ThemeData theme, FeedRecord record) {
     return MobCard(
       onTap: () => unawaited(_open(record)),
+      onLongPress: () => unawaited(_showRecordActions(record)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -902,6 +928,230 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
 
   Future<void> _open(FeedRecord record) async {
     await openDocumentByViewId(context, record.view.id);
+    await reload();
+  }
+
+  // ------------------------------------------------------------ 长按操作
+
+  /// 长按卡片：重命名 / 移动到 / 打标签 / 删除（删除进回收站，可从设置里恢复）。
+  Future<void> _showRecordActions(FeedRecord record) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: const Text('重命名'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                unawaited(_renameRecord(record));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: const Text('移动到…'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                unawaited(_moveRecord(record));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.sell_outlined),
+              title: Text(
+                record.tags.isEmpty
+                    ? '打标签'
+                    : '打标签（当前 ${record.tags.map((t) => '#$t').join(' ')}）',
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                unawaited(_editTags(record));
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.delete_outline,
+                color: Theme.of(sheetContext).colorScheme.error,
+              ),
+              title: Text(
+                '删除',
+                style: TextStyle(
+                  color: Theme.of(sheetContext).colorScheme.error,
+                ),
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                unawaited(_deleteRecord(record));
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _renameRecord(FeedRecord record) async {
+    final controller = TextEditingController(text: record.view.name);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('重命名'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '页面标题'),
+          onSubmitted: (text) => Navigator.of(dialogContext).pop(text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (value == null) {
+      return;
+    }
+    await ViewBackendService.updateView(
+      viewId: record.view.id,
+      name: value.trim(),
+    );
+    await reload();
+  }
+
+  /// 移动：列出所有分类容器与它们的子页面作为可选目标（沿用内核 moveViewV2）。
+  Future<void> _moveRecord(FeedRecord record) async {
+    final containers = await widget.repository.listContainers();
+    final result = await ViewBackendService.getAllViews();
+    final views = result.toNullable()?.items ?? const <ViewPB>[];
+    final targets = <({String id, String label})>[];
+    for (final container in containers) {
+      targets.add((id: container.viewId, label: container.name));
+      for (final view in views) {
+        if (view.parentViewId == container.viewId &&
+            view.id != record.view.id &&
+            view.layout == ViewLayoutPB.Document) {
+          targets.add((id: view.id, label: '${container.name} / ${view.name}'));
+        }
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    final target = await showModalBottomSheet<({String id, String label})>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.6,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(
+                  '移动到',
+                  style: Theme.of(sheetContext).textTheme.titleMedium,
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  children: [
+                    for (final item in targets)
+                      ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.folder_outlined),
+                        title: Text(item.label),
+                        onTap: () => Navigator.of(sheetContext).pop(item),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (target == null) {
+      return;
+    }
+    await ViewBackendService.moveViewV2(
+      viewId: record.view.id,
+      newParentId: target.id,
+      prevViewId: null,
+      fromSection: ViewSectionPB.Public,
+      toSection: ViewSectionPB.Public,
+    );
+    await reload();
+  }
+
+  Future<void> _editTags(FeedRecord record) async {
+    final controller = TextEditingController(text: record.tags.join(' '));
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('标签'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '空格分隔，例如：重要 待跟进',
+          ),
+          onSubmitted: (text) => Navigator.of(dialogContext).pop(text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (value == null) {
+      return;
+    }
+    await savePageTags(
+      record.view.id,
+      value.split(RegExp(r'[\s,，]+')).where((t) => t.isNotEmpty).toList(),
+    );
+    await reload();
+  }
+
+  Future<void> _deleteRecord(FeedRecord record) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除这条记录？'),
+        content: Text('「${record.title}」会进入回收站，之后可以在设置里恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    await ViewBackendService.deleteView(viewId: record.view.id);
     await reload();
   }
 }
