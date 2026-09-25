@@ -257,6 +257,24 @@ class CrmEntityRepository {
     return rows.map(_eventFromRow).toList();
   }
 
+  /// 某类实体**每一条各自的最近一次跟踪记录**（entityId → 最近一条事件）。
+  ///
+  /// 列表卡片要显示"3 天前 · 电话"这类信息，逐条查会 N+1，所以一次查出来。
+  /// 没有跟踪记录的实体不会出现在返回值里。
+  Future<Map<String, CrmEvent>> latestEventsOf(String entityType) async {
+    final rows = _db.raw.select(
+      'SELECT * FROM $kCrmEventTable WHERE entity_type = ? '
+      'ORDER BY event_time DESC;',
+      [entityType],
+    );
+    final latest = <String, CrmEvent>{};
+    for (final row in rows) {
+      final event = _eventFromRow(row);
+      latest.putIfAbsent(event.entityId, () => event);
+    }
+    return latest;
+  }
+
   Future<CrmEvent> addEvent({
     required String entityType,
     required String entityId,

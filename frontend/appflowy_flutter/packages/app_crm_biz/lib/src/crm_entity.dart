@@ -159,6 +159,26 @@ class CrmEntity {
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+
+  /// 「已收金额」：收款单的自定义字段 `received`（预置字段，可能为空）。
+  double get receivedAmount =>
+      double.tryParse(extra['received']?.trim() ?? '') ?? 0;
+
+  /// 「未收金额」＝应收 − 已收（不为负）。只有收款单有意义。
+  double get unpaidAmount {
+    final diff = amount - receivedAmount;
+    return diff > 0 ? diff : 0;
+  }
+
+  /// 客户等级字母（预置字段 `level`，如「A 重点」→ `A`）；未设置返回空串。
+  String get levelLetter {
+    final raw = extra['level']?.trim() ?? '';
+    if (raw.isEmpty) {
+      return '';
+    }
+    final head = raw.substring(0, 1).toUpperCase();
+    return RegExp(r'[A-Z0-9]').hasMatch(head) ? head : '';
+  }
 }
 
 /// CRM 跟踪记录（电话/拜访/会议/微信/备注…）：**带时间**，会同步进统一时间轴。

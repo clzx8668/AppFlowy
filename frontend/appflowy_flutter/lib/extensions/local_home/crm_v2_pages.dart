@@ -6,6 +6,7 @@ import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/local_home/mob_sliding_tabs.dart';
 import 'package:appflowy/extensions/local_home/crm_entity_detail_page.dart';
 import 'package:appflowy/extensions/local_home/crm_field_inputs.dart';
+import 'package:appflowy/extensions/local_home/crm_view_parts.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
@@ -31,12 +32,20 @@ class _CrmHomePageState extends State<CrmHomePage>
   CrmEntityRepository? _repository;
   bool _loading = true;
 
+  /// 首屏默认落在**客户**标签（见 doc/designs/CRM-A+C-设计定稿.md 第 1 节）。
+  static int get _defaultTabIndex =>
+      CrmEntityType.all.indexOf(CrmEntityType.customer);
+
   late final TabController _tabController = TabController(
     length: CrmEntityType.all.length,
     vsync: this,
+    initialIndex: _defaultTabIndex,
   )..addListener(() => setState(() {}));
 
   final Map<String, List<CrmEntity>> _entities = {};
+
+  /// 跨实体派生信息（最近互动 / 未收金额 / 逾期），列表卡片直接取用。
+  CrmInsights? _insights;
 
   @override
   void initState() {
@@ -116,13 +125,24 @@ class _CrmHomePageState extends State<CrmHomePage>
     if (repository == null) {
       return;
     }
+    final all = <CrmEntity>[];
     for (final type in CrmEntityType.all) {
-      _entities[type] = await repository.list(type);
+      final list = await repository.list(type);
+      _entities[type] = list;
+      all.addAll(list);
+    }
+    // 列表卡片要显示"最近互动"，逐条查会 N+1，所以每类一次查全。
+    final latestEvents = <String, CrmEvent>{};
+    for (final type in CrmEntityType.all) {
+      latestEvents.addAll(await repository.latestEventsOf(type));
     }
     if (!mounted) {
       return;
     }
-    setState(() => _loading = false);
+    setState(() {
+      _insights = CrmInsights(entities: all, latestEvents: latestEvents);
+      _loading = false;
+    });
   }
 
   Future<void> _createEntity(String type) async {
@@ -213,7 +233,14 @@ class _CrmHomePageState extends State<CrmHomePage>
   }
 
   Widget _entityList(ThemeData theme, String type) {
-    final entities = _entities[type] ?? const <CrmEntity>[];
+    final insights = _insights;
+    final entities = insights == null
+        ? (_entities[type] ?? const <CrmEntity>[])
+        : sortCrmEntities(
+            _entities[type] ?? const <CrmEntity>[],
+            type: type,
+            insights: insights,
+          );
     if (entities.isEmpty) {
       return Center(
         child: Column(
@@ -244,99 +271,196 @@ class _CrmHomePageState extends State<CrmHomePage>
         itemBuilder: (context, index) {
           final entity = entities[index];
           return MobCard(
-            onTap: () async {
-              final repository = _repository;
-              if (repository == null) {
-                return;
-              }
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => CrmEntityDetailPage(
-                    entityId: entity.id,
-                    repository: repository,
-                  ),
-                ),
-              );
-              await _reload();
-            },
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        entity.title.isEmpty ? '未命名' : entity.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    if (entity.stage.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          entity.stage,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onPrimaryContainer,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                if (entity.subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    entity.subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    if (entity.amount > 0)
-                      Text(
-                        '¥${entity.amount.toStringAsFixed(0)}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    if (entity.amount > 0) const SizedBox(width: 8),
-                    if (entity.eventTime != null)
-                      Text(
-                        _formatDate(entity.eventTime!),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    const Spacer(),
-                    Text(
-                      _formatDate(entity.updatedAt),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            onTap: () => unawaited(_openEntity(entity)),
+            child: type == CrmEntityType.customer && insights != null
+                ? _customerCardBody(theme, entity, insights)
+                : _entityCardBody(theme, entity, insights),
           );
         },
       ),
+    );
+  }
+
+  Future<void> _openEntity(CrmEntity entity) async {
+    final repository = _repository;
+    if (repository == null) {
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CrmEntityDetailPage(
+          entityId: entity.id,
+          repository: repository,
+        ),
+      ),
+    );
+    await _reload();
+  }
+
+  /// **客户卡**（定稿第 1 节）：名称 +（逾期红点）+ 等级徽标 / 最近互动 / 未收金额。
+  Widget _customerCardBody(
+    ThemeData theme,
+    CrmEntity entity,
+    CrmInsights insights,
+  ) {
+    final level = entity.levelLetter;
+    final overdueDays = insights.overdueDaysOf(entity);
+    final unpaid = insights.unpaidOf(entity.id);
+    final interaction = formatCrmInteraction(
+      insights.latestEventOf(entity.id),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      entity.title.isEmpty ? '未命名客户' : entity.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  if (overdueDays != null) ...[
+                    const SizedBox(width: 6),
+                    CrmOverdueDot(tooltip: '关键日期已逾期 $overdueDays 天'),
+                  ],
+                ],
+              ),
+            ),
+            if (level.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              CrmLevelBadge(letter: level),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                interaction,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            if (unpaid > 0) ...[
+              const SizedBox(width: 8),
+              Text(
+                '未收 ¥${formatCrmMoney(unpaid)}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 其余标签的卡片：保持原样式（标题 + 阶段 + 副标题 + 金额/关键日期），
+  /// 只补一个"关键日期逾期"的红点，让列表里能一眼看到异常。
+  Widget _entityCardBody(
+    ThemeData theme,
+    CrmEntity entity,
+    CrmInsights? insights,
+  ) {
+    final overdueDays = insights?.overdueDaysOf(entity);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      entity.title.isEmpty ? '未命名' : entity.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  if (overdueDays != null) ...[
+                    const SizedBox(width: 6),
+                    CrmOverdueDot(tooltip: '关键日期已逾期 $overdueDays 天'),
+                  ],
+                ],
+              ),
+            ),
+            if (entity.stage.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  entity.stage,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (entity.subtitle.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            entity.subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            if (entity.amount > 0)
+              Text(
+                '¥${entity.amount.toStringAsFixed(0)}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            if (entity.amount > 0) const SizedBox(width: 8),
+            if (entity.eventTime != null)
+              Text(
+                _formatDate(entity.eventTime!),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            const Spacer(),
+            Text(
+              _formatDate(entity.updatedAt),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
