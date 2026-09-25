@@ -20,6 +20,7 @@ import 'package:appflowy/extensions/local_home/mobile_theme.dart';
 import 'package:appflowy/extensions/local_home/ios_calendar_page.dart';
 import 'package:appflowy/extensions/local_home/mob_sliding_tabs.dart';
 import 'package:appflowy/extensions/local_home/crm_customer_detail_page.dart';
+import 'package:appflowy/extensions/local_home/crm_v2_pages.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
@@ -275,8 +276,8 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                   timelineParentViewId:
                       _containerOfModule(ContainerModule.diary)?.viewId,
                 ),
-                // CRM：直接是客户卡
-                const CrmView(),
+                // CRM：线索 / 客户 / 联系人 / 项目 / 合同 / 收款 六个分类页
+                CrmHomePage(workspaceId: widget.workspaceId),
                 // AI：直接是 AI 记忆
                 AiMemoryView(
                   containers: _containers,

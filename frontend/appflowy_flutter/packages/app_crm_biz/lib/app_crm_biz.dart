@@ -9,6 +9,8 @@ library app_crm_biz;
 
 export 'src/crm_customer.dart';
 export 'src/crm_repository.dart';
+export 'src/crm_entity.dart';
+export 'src/crm_v2_repository.dart';
 
 /// 模块标识，用于日志与路由前缀。
 const String kAppCrmBizPackage = 'app_crm_biz';
