@@ -95,8 +95,19 @@ class _LocalModulesSectionState extends State<LocalModulesSection> {
             '';
 
     void open(Widget page) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => page),
+      // 同上：桌面端用应用内对话框打开模块页，不覆盖侧栏、随时可关（✕ / Esc）
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          insetPadding: const EdgeInsets.all(24),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1100, maxHeight: 900),
+            child: Navigator(
+              onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => page),
+            ),
+          ),
+        ),
       );
     }
 

@@ -86,7 +86,7 @@ class _RailIcon extends StatelessWidget {
     required this.onTap,
   });
 
-  final IconData icon;
+  final FlowySvgData icon;
   final String tooltip;
   final VoidCallback onTap;
 
@@ -107,7 +107,7 @@ class _RailIcon extends StatelessWidget {
               width: 40,
               height: 40,
               child: Center(
-                child: Icon(icon, size: 20),
+                child: FlowySvg(icon, size: const Size.square(20)),
               ),
             ),
           ),
@@ -128,7 +128,7 @@ class LocalNavItem {
     required this.open,
   });
 
-  final IconData icon;
+  final FlowySvgData icon;
   final String label;
   final void Function(BuildContext context) open;
 }
@@ -139,12 +139,27 @@ List<LocalNavItem> localNavItems({
   required Int64 userId,
 }) {
   void push(BuildContext context, Widget page) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    // PC 端**沿用上游框架**：模块页不作为全屏路由 push（那样会盖住侧栏、也没有返回路径），
+    // 而是像上游"设置"那样开一个**应用内对话框**——侧栏与多标签区仍在，
+    // 右上角 ✕ / Esc 就是返回（见用户 2026-09-26 反馈）。
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.all(24),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100, maxHeight: 900),
+          child: Navigator(
+            onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => page),
+          ),
+        ),
+      ),
+    );
   }
 
   return [
     LocalNavItem(
-      icon: Icons.article_outlined,
+      icon: FlowySvgs.document_s,
       label: '记录流（首页）',
       open: (context) => push(
         context,
@@ -157,7 +172,7 @@ List<LocalNavItem> localNavItems({
       ),
     ),
     LocalNavItem(
-      icon: Icons.calendar_month_outlined,
+      icon: FlowySvgs.calendar_s,
       label: '日历 · 日记',
       open: (context) => push(
         context,
@@ -165,18 +180,18 @@ List<LocalNavItem> localNavItems({
       ),
     ),
     LocalNavItem(
-      icon: Icons.business_outlined,
+      icon: FlowySvgs.person_s,
       label: 'CRM',
       open: (context) => push(context, const CrmView()),
     ),
     LocalNavItem(
-      icon: Icons.auto_awesome_outlined,
+      icon: FlowySvgs.ai_sparks_s,
       label: 'AI 记忆',
       open: (context) => push(context, const AiMemoryView()),
     ),
     LocalNavItem(
-      // 第 5 个与移动端底栏一致（双链 / 快照同步仍留在展开态侧栏的「本地模块」里）
-      icon: Icons.settings_outlined,
+      // 与展开态侧栏「本地模块」里的图标同源，不另起一套
+      icon: FlowySvgs.settings_sync_m,
       label: '设置',
       open: (context) => showSettingsDialog(
         context,
@@ -251,7 +266,7 @@ class LocalNavDrawer extends StatelessWidget {
               for (final item in items)
                 ListTile(
                   dense: true,
-                  leading: Icon(item.icon, size: 20),
+                  leading: FlowySvg(item.icon, size: const Size.square(20)),
                   title: Text(item.label),
                   onTap: () {
                     Navigator.of(context).pop();
