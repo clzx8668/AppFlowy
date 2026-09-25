@@ -10,34 +10,26 @@ import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-/// 桌面端「本地导航栏」—— 三态侧栏，与移动端同构。
+/// **侧边栏的"收起态"本体**：上游收起时整条侧栏完全滑走（宽度归零），
+/// 这里改成**只留下一个图标宽度的窄条**，方便随手点开本地模块。
 ///
-/// - **压缩态（默认最窄）**：宽 [railWidth]，只留单列图标 + 悬浮提示。
-///   上游侧栏收起时以前是"什么都没有"，现在始终留一条导航栏；
-/// - **展开态**：一键展开上游完整侧栏（页面树 + 本地模块），保留桌面多标签/拖拽/大纲能力；
-/// - **抽屉态**：浮层抽屉（图标 + 文字），任何窗口宽度都能用，点遮罩关闭。
-///
-/// 为什么单独一条栏而不是改上游侧栏内部：上游 `HomeSideBar` 结构复杂（空间、收藏、页面树、
-/// 回收站…），我们只做**加法**——把自己的一列图标放在最左边，其余一律不碰，
-/// 这样上游升级不会冲突（见《代码开发规范与工程规约》"只新增不删除"）。
+/// 关键区别（2026-09-26 产品纠正）：它**不是**在外侧另加一列，
+/// 而是占据上游侧栏原来的位置（left: 0），只是宽度从 `menuWidth` 缩到 [railWidth]；
+/// 点最上面的 `»` 就展开回完整侧栏（页面树 + 本地模块 + 多标签等桌面能力照旧）。
 class LocalNavRail extends StatelessWidget {
   const LocalNavRail({
     super.key,
     required this.userId,
-    required this.menuExpanded,
     required this.onToggleMenu,
   });
 
   final Int64 userId;
 
-  /// 上游侧栏当前是否展开（来自 `HomeSettingBloc.menuStatus`）。
-  final bool menuExpanded;
-
-  /// 请求上游侧栏展开 / 收起。
+  /// 请求上游侧栏展开（收起态里点 `»`）。
   final VoidCallback onToggleMenu;
 
-  /// 压缩态宽度（最窄单列：40 图标 + 8×2 内边距）。
-  static const double railWidth = 56;
+  /// 收起态宽度＝"一个图标的宽度"（24 图标 + 12×2 内边距）。
+  static const double railWidth = 48;
 
   @override
   Widget build(BuildContext context) {
@@ -58,9 +50,8 @@ class LocalNavRail extends StatelessWidget {
         children: [
           const SizedBox(height: 8),
           _RailIcon(
-            icon: Icons.workspaces_outline,
-            tooltip: menuExpanded ? '收起侧边栏' : '展开侧边栏',
-            selected: menuExpanded,
+            icon: Icons.chevron_right,
+            tooltip: '展开侧边栏',
             onTap: onToggleMenu,
           ),
           const SizedBox(height: 4),
@@ -78,18 +69,6 @@ class LocalNavRail extends StatelessWidget {
               onTap: () => item.open(context),
             ),
           const Spacer(),
-          _RailIcon(
-            icon: Icons.menu_open,
-            tooltip: '抽屉模式（图标 + 文字）',
-            onTap: () => unawaited(
-              showLocalNavDrawer(
-                context,
-                workspaceId: workspaceId,
-                userId: userId,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
         ],
       ),
     );
@@ -101,13 +80,11 @@ class _RailIcon extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onTap,
-    this.selected = false,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
-  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -118,7 +95,7 @@ class _RailIcon extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Material(
-          color: selected ? scheme.secondaryContainer : Colors.transparent,
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
@@ -129,9 +106,7 @@ class _RailIcon extends StatelessWidget {
               child: Icon(
                 icon,
                 size: 20,
-                color: selected
-                    ? scheme.onSecondaryContainer
-                    : scheme.onSurfaceVariant,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ),

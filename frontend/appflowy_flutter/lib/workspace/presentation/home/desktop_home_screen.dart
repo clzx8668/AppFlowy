@@ -194,17 +194,17 @@ class DesktopHomeScreen extends StatelessWidget {
     final notificationPanel = NotificationPanel();
     final sliderHoverTrigger = SliderMenuHoverTrigger();
 
-    // 二次开发：最左边常驻一条**最窄单列图标**导航栏（本地导航三态之一）。
-    //
-    // 为什么常驻：上游侧栏收起后原本是"整块消失"，既没有压缩态、也没有"再展开"的入口；
-    // 常驻后 —— 点顶部图标＝展开/收起上游侧栏（压缩态就只剩这一列 56px），
-    // 点底部图标＝以抽屉形式打开本地导航（图标 + 文字），任何窗口宽度都能用。
-    // 详见 doc/全局完善计划（多轮）.md 第 1 轮。
-    final localRail = LocalNavRail(
-      userId: userProfile.id,
-      menuExpanded: layout.showMenu,
-      onToggleMenu: () => context.read<HomeSettingBloc>().collapseMenu(),
-    );
+    // 二次开发：**改造侧栏的"收起态"** —— 上游收起时整条侧栏滑走（宽度归零），
+    // 现在改成只留"一个图标的宽度"的窄条（本地模块图标 + `»` 展开），
+    // 位置仍在侧栏原处（left: 0），不是在外侧另加一列。
+    // 详见 doc/全局完善计划（多轮）.md 第 1 轮与《二次开发改动记录》步骤㊵。
+    final collapsedBarWidth = layout.showMenu ? 0.0 : LocalNavRail.railWidth;
+    final localRail = layout.showMenu
+        ? const SizedBox.shrink()
+        : LocalNavRail(
+            userId: userProfile.id,
+            onToggleMenu: () => context.read<HomeSettingBloc>().collapseMenu(),
+          );
 
     final homeMenuResizer =
         layout.showMenu ? const SidebarResizer() : const SizedBox.shrink();
@@ -220,7 +220,7 @@ class DesktopHomeScreen extends StatelessWidget {
       notificationPanel: notificationPanel,
       sliderHoverTrigger: sliderHoverTrigger,
       localRail: localRail,
-      localRailWidth: LocalNavRail.railWidth,
+      localRailWidth: collapsedBarWidth,
     );
   }
 
@@ -314,37 +314,28 @@ class DesktopHomeScreen extends StatelessWidget {
               duration: layout.animDuration.inMilliseconds * 0.001,
             )
             .positioned(
-              left: isSliderbarShowing
-                  ? layout.menuWidth + localRailWidth
-                  : localRailWidth,
+              left: isSliderbarShowing ? layout.menuWidth : localRailWidth,
               top: isSliderbarShowing ? 0 : 52,
               width: layout.notificationPanelWidth,
               bottom: 0,
             ),
         sidebar
             .animatedPanelX(
-              // 侧栏收起时要滑到"图标栏左边"以外，否则会残留一条压在图标栏上
-              closeX: -(layout.menuWidth + localRailWidth),
+              closeX: -layout.menuWidth,
               isClosed: !isSliderbarShowing,
               curve: Curves.easeOutQuad,
               duration: layout.animDuration.inMilliseconds * 0.001,
             )
-            .positioned(
-              left: localRailWidth,
-              top: 0,
-              width: layout.menuWidth,
-              bottom: 0,
-            ),
+            .positioned(left: 0, top: 0, width: layout.menuWidth, bottom: 0),
         homeMenuResizer
-            .positioned(left: layout.menuWidth + localRailWidth)
+            .positioned(left: layout.menuWidth)
             .animate(layout.animDuration, Curves.easeOutQuad),
-        // 最窄单列图标导航栏：放在 Stack 最后 = 最上层，
-        // 保证它不会被侧栏/通知面板的滑动层盖住（否则点不到）。
+        // 收起态的窄条（只有一个图标宽）：占据侧栏原来的位置，放在最上层保证可点。
         localRail.positioned(
           left: 0,
           top: 0,
           bottom: 0,
-          width: LocalNavRail.railWidth,
+          width: localRailWidth == 0 ? null : LocalNavRail.railWidth,
         ),
       ],
     );
