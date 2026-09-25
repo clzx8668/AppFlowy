@@ -81,13 +81,22 @@ class LocalNavRail extends StatelessWidget {
             endIndent: 12,
             color: theme.colorScheme.outlineVariant,
           ),
-          for (final item in items)
-            _RailIcon(
-              icon: item.icon,
-              tooltip: item.label,
-              onTap: () => item.open(context),
+          // A 方案：窄条要能装下"展开态侧栏的全部一级项"（含用户自建页面），
+          // 因此图标区可上下滚动，顶部 logo 固定不动。
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (final item in items)
+                    _RailIcon(
+                      icon: item.icon,
+                      tooltip: item.label,
+                      onTap: () => item.open(context),
+                    ),
+                ],
+              ),
             ),
-          const Spacer(),
+          ),
         ],
       ),
     );
