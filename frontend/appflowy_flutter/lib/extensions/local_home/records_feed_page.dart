@@ -4,6 +4,7 @@ import 'package:app_containers/app_containers.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
+import 'package:appflowy/extensions/local_home/mob_sliding_tabs.dart';
 import 'package:appflowy/extensions/page_tags.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
@@ -33,12 +34,32 @@ class FeedRecord {
             1000,
       );
 
+  /// 创建时间（默认排序用它 —— 只看不改内容就不会因为"打开过"而换位置）。
+  DateTime get createdAt => DateTime.fromMillisecondsSinceEpoch(
+        (view.createTime == Int64.ZERO
+                ? view.lastEdited
+                : view.createTime)
+            .toInt() *
+            1000,
+      );
+
   String get title {
     final name = view.name.trim();
     return name.isEmpty ? '未命名页面' : name;
   }
 
   List<String> get tags => tagsOfView(view);
+}
+
+/// 记录流的排序方式。
+enum FeedSort {
+  createdDesc('创建时间 ↓'),
+  createdAsc('创建时间 ↑'),
+  editedDesc('编辑时间 ↓'),
+  titleAsc('标题 A→Z');
+
+  const FeedSort(this.label);
+  final String label;
 }
 
 /// 手机端首页：**全部记录流**（跨分类、按时间倒序）+ 分类/标签筛选。
@@ -77,6 +98,9 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
 
   /// 视图形态：列表 / 网格（对齐参考项目的两种卡片）
   bool _gridMode = false;
+
+  /// 排序方式：默认**按创建时间倒序**（打开/关闭页面不会改变排序位置）
+  FeedSort _sort = FeedSort.createdDesc;
 
   /// 搜索态：点顶栏搜索后进入
   bool _searching = false;
@@ -128,7 +152,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
         final (kind, icon) = _classify(view, byId, containers);
         records.add(FeedRecord(view: view, kind: kind, kindIcon: icon));
       }
-      records.sort((a, b) => b.time.compareTo(a.time));
+      _applySort(records);
 
       final defaultContainer = containers.firstWhere(
         (c) => c.module == ContainerModule.note,
@@ -259,6 +283,27 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
     return _visible
         .where((record) => kind.isEmpty || record.kind == kind)
         .toList(growable: false);
+  }
+
+  void _applySort(List<FeedRecord> records) {
+    switch (_sort) {
+      case FeedSort.createdDesc:
+        records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      case FeedSort.createdAsc:
+        records.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      case FeedSort.editedDesc:
+        records.sort((a, b) => b.time.compareTo(a.time));
+      case FeedSort.titleAsc:
+        records.sort((a, b) => a.title.compareTo(b.title));
+    }
+  }
+
+  /// 切换排序：只重排内存里的列表，不重新拉数据。
+  void _setSort(FeedSort sort) {
+    setState(() {
+      _sort = sort;
+      _applySort(_all);
+    });
   }
 
   /// 懒加载正文摘要：每次最多并发 3 篇、每轮最多 40 篇，避免一次性读爆内核。
@@ -451,6 +496,88 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
     }
   }
 
+  /// 「更多」弹层：排序 / 视图 / 标签筛选（默认排序=创建时间，不做多余操作时不用打开它）。
+  Future<void> _openMoreSheet() async {
+    final theme = Theme.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(
+                  '排序',
+                  style: Theme.of(sheetContext).textTheme.titleSmall,
+                ),
+              ),
+              for (final option in FeedSort.values)
+                RadioListTile<FeedSort>(
+                  dense: true,
+                  value: option,
+                  groupValue: _sort,
+                  title: Text(option.label),
+                  onChanged: (value) {
+                    if (value != null) {
+                      _setSort(value);
+                      setSheetState(() {});
+                    }
+                  },
+                ),
+              const Divider(height: 8),
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  _gridMode ? Icons.view_list_outlined : Icons.grid_view,
+                ),
+                title: Text(_gridMode ? '切换为列表视图' : '切换为网格视图'),
+                onTap: () {
+                  setState(() => _gridMode = !_gridMode);
+                  Navigator.of(sheetContext).pop();
+                },
+              ),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.filter_alt_outlined),
+                title: Text(
+                  _tagFilter.isEmpty
+                      ? '按标签筛选'
+                      : '按标签筛选（已选 ${_tagFilter.length}）',
+                ),
+                trailing: _tagFilter.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () {
+                          setState(() => _tagFilter.clear());
+                          Navigator.of(sheetContext).pop();
+                        },
+                      ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  unawaited(_openFilterSheet());
+                },
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Text(
+                  '默认按创建时间排序：打开/编辑内容不会改变记录的位置',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -494,17 +621,16 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
                 }
               },
             ),
+          // 三个按钮收成一个「更多」：排序 / 筛选 / 视图
           IconButton(
-            tooltip: '筛选',
+            tooltip: '更多',
             icon: Icon(
-              _tagFilter.isEmpty ? Icons.filter_alt_outlined : Icons.filter_alt,
+              Icons.more_vert,
+              color: _tagFilter.isEmpty && _sort == FeedSort.createdDesc
+                  ? null
+                  : theme.colorScheme.primary,
             ),
-            onPressed: () => unawaited(_openFilterSheet()),
-          ),
-          IconButton(
-            tooltip: _gridMode ? '列表视图' : '网格视图',
-            icon: Icon(_gridMode ? Icons.view_list_outlined : Icons.grid_view),
-            onPressed: () => setState(() => _gridMode = !_gridMode),
+            onPressed: () => unawaited(_openMoreSheet()),
           ),
         ],
       ),
@@ -539,29 +665,16 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
           ),
         ),
       ),
-      child: TabBar(
-        controller: _tabController,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        indicatorSize: TabBarIndicatorSize.label,
-        indicatorWeight: 2.5,
-        indicatorColor: theme.colorScheme.primary,
-        dividerColor: Colors.transparent,
-        labelStyle: theme.textTheme.labelLarge?.copyWith(
-          fontWeight: FontWeight.w600,
-        ),
-        unselectedLabelStyle: theme.textTheme.labelLarge,
-        labelColor: theme.colorScheme.primary,
-        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-        tabs: [
-          for (var i = 0; i < _tabsCache.length; i++)
-            Tab(
-              height: 42,
-              text: i == 0 ? '全部 ${_all.length}' : _tabsCache[i],
+      // 自绘左对齐标签（Material 3 的滚动型 TabBar 会带起始偏移，看起来像居中）
+      child: _tabController == null
+          ? const SizedBox(height: 44)
+          : MobSlidingTabs(
+              controller: _tabController!,
+              labels: [
+                for (var i = 0; i < _tabsCache.length; i++)
+                  i == 0 ? '全部 ${_all.length}' : _tabsCache[i],
+              ],
             ),
-        ],
-      ),
     );
   }
 

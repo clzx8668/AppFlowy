@@ -18,6 +18,7 @@ import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/extensions/local_home/mobile_theme.dart';
 import 'package:appflowy/extensions/local_home/ios_calendar_page.dart';
+import 'package:appflowy/extensions/local_home/mob_sliding_tabs.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
@@ -2182,11 +2183,32 @@ class CrmView extends StatefulWidget {
   State<CrmView> createState() => CrmViewState();
 }
 
-class CrmViewState extends State<CrmView> {
+class CrmViewState extends State<CrmView> with TickerProviderStateMixin {
   CrmRepository? _repository;
   List<CrmCustomer> _customers = const [];
   bool _loading = true;
   String _stageFilter = '';
+
+  /// 阶段标签（与记录页同款线性滑动标签）
+  late final TabController _stageTabController = TabController(
+    length: kCrmStages.length + 1,
+    vsync: this,
+  )..addListener(_onStageChanged);
+
+  void _onStageChanged() {
+    final index = _stageTabController.index;
+    final stage = index == 0 ? '' : kCrmStages[index - 1];
+    if (stage != _stageFilter) {
+      setState(() => _stageFilter = stage);
+      unawaited(_reload());
+    }
+  }
+
+  @override
+  void dispose() {
+    _stageTabController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -2371,27 +2393,10 @@ class CrmViewState extends State<CrmView> {
       ),
       body: Column(
         children: [
-          // 阶段筛选（iOS18 风格 chip 行）
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: [
-                for (final option in ['', ...kCrmStages])
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8, top: 6),
-                    child: ChoiceChip(
-                      label: Text(option.isEmpty ? '全部' : option),
-                      selected: _stageFilter == option,
-                      onSelected: (_) {
-                        setState(() => _stageFilter = option);
-                        unawaited(_reload());
-                      },
-                    ),
-                  ),
-              ],
-            ),
+          // 阶段筛选：与记录页同一套「线性滑动标签」（左对齐 + 下划线跟随）
+          MobSlidingTabs(
+            controller: _stageTabController,
+            labels: ['全部', ...kCrmStages],
           ),
           Expanded(
             child: _loading

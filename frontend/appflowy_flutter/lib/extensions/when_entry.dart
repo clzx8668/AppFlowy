@@ -10,6 +10,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/callout/ca
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_backend/log.dart';
+// material 也导出了 dart:ui 的 Path，与编辑器里的 Path 冲突，这里隐藏掉（编辑器 Path 优先）
+import 'package:flutter/material.dart' hide Path;
 
 /// 「时间标记」：**标准 callout 块 + `af_when` payload**，用来给页面标注"这条内容属于哪一天"。
 ///
@@ -42,23 +44,61 @@ String _todayKey() {
   return '${now.year}-${two(now.month)}-${two(now.day)}';
 }
 
-/// 在光标处插入「时间标记」块（一个事务只插一个节点）。
-Future<void> insertWhenMark(EditorState editorState) async {
-  final selection = editorState.selection;
-  if (selection == null || !selection.isCollapsed) {
-    return;
+/// 插入「时间标记」块：**先选日期，再插入**（一个事务只插一个节点）。
+///
+/// 之前的实现依赖"当前有光标选区"，底部工具栏点击时编辑器常常已失焦 →
+/// 表现为"点了没反应"。现在：
+/// 1) 先弹日期选择器（默认今天），用户明确要标哪一天；
+/// 2) 有光标就在光标后插入，没有光标就插到**文档末尾**（然后自动聚焦到该块）。
+Future<String?> insertWhenMark(
+  EditorState editorState,
+  BuildContext context,
+) async {
+  final picked = await _pickDate(context);
+  if (picked == null) {
+    return null;
   }
-  final path = selection.end.path;
-  final node = editorState.getNodeAtPath(path);
-  final delta = node?.delta;
-  if (node == null || delta == null) {
-    return;
-  }
-  final insertedPath = delta.isEmpty ? path : path.next;
+  final path = _insertionPath(editorState);
   final transaction = editorState.transaction
-    ..insertNode(insertedPath, whenMarkNode())
-    ..afterSelection = Selection.collapsed(Position(path: insertedPath));
+    ..insertNode(path, whenMarkNode(date: picked))
+    ..afterSelection = Selection.collapsed(Position(path: path));
   await editorState.apply(transaction);
+  return picked;
+}
+
+/// 计算插入位置：光标所在块之后；没有光标则用文档最后一个块的后面。
+///
+/// 返回 `List<int>`（编辑器的 `Path` 就是它的 typedef），避免与 `dart:ui` 的 Path 撞名。
+List<int> _insertionPath(EditorState editorState) {
+  final selection = editorState.selection;
+  if (selection != null && selection.isCollapsed) {
+    final path = selection.end.path;
+    final node = editorState.getNodeAtPath(path);
+    final delta = node?.delta;
+    if (node != null && delta != null) {
+      return delta.isEmpty ? path : path.next;
+    }
+  }
+  final children = editorState.document.root.children;
+  if (children.isEmpty) {
+    return const [0];
+  }
+  return [children.length];
+}
+
+Future<String?> _pickDate(BuildContext context) async {
+  final now = DateTime.now();
+  final picked = await showDatePicker(
+    context: context,
+    initialDate: now,
+    firstDate: DateTime(2000),
+    lastDate: DateTime(2100),
+  );
+  if (picked == null) {
+    return null;
+  }
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${picked.year}-${two(picked.month)}-${two(picked.day)}';
 }
 
 /// 解析一篇文档里所有「时间标记」（页面 id → 日期列表）。

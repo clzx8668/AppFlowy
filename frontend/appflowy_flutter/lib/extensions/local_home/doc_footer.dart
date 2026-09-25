@@ -99,8 +99,9 @@ class _DocFooterState extends State<DocFooter> {
                   const Spacer(),
                   if (widget.editorState != null)
                     TextButton.icon(
-                      onPressed: () =>
-                          unawaited(insertWhenMark(widget.editorState!)),
+                      onPressed: () => unawaited(
+                        insertWhenMark(widget.editorState!, context),
+                      ),
                       icon: const Icon(Icons.schedule, size: 16),
                       label: const Text('时间标记'),
                       style: TextButton.styleFrom(
