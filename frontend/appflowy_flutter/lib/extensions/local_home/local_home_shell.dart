@@ -14,6 +14,8 @@ import 'package:appflowy/extensions/diary_entry.dart';
 import 'package:appflowy/extensions/ai_entry.dart';
 import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
+import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
+import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
@@ -53,12 +55,15 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  /// 记录流页面的状态（FAB 需要知道"当前筛选对应的新建落点"）。
+  final _feedKey = GlobalKey<RecordsFeedPageState>();
+
+  /// FAB 展开态（上滑展开菜单）
+  bool _fabExpanded = false;
+
   List<ModuleContainer> _containers = const [];
   bool _loading = true;
   int _tabIndex = 0;
-
-  /// 首页标签当前展示的容器（默认「闪念」）。
-  ModuleContainer? _homeContainer;
 
   @override
   void initState() {
@@ -77,11 +82,6 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
       }
       setState(() {
         _containers = containers;
-        // 首页默认打开「笔记」分类容器（里面是 闪念 / 工作记录 / 生活日记 等子页面）
-        _homeContainer = containers.firstWhere(
-          (c) => c.module == ContainerModule.note,
-          orElse: () => containers.first,
-        );
         _loading = false;
       });
       // 二次开发：初始化「时间线」数据库（挂在日历分类容器下）并回填历史日记
@@ -94,12 +94,84 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
     }
   }
 
-  void _selectContainer(ModuleContainer container) {
-    setState(() {
-      _homeContainer = container;
-      _tabIndex = 0;
-    });
+  /// 抽屉里点某个分类：打开它的**记录视图**（列表/网格/时间线三选一）。
+  ///
+  /// 注意：首页（记录流）里分类是筛选条件；这里是"按分类看全部内容"的另一条路径，
+  /// 两条路径读的是同一份内核页面树。
+  void _openContainerRecords(ModuleContainer container) {
     Navigator.of(context).maybePop();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _ContainerRecordsView(
+          container: container,
+          repository: _repository,
+          title: container.name,
+        ),
+      ),
+    );
+  }
+
+  /// FAB 点击：在当前筛选对应的位置新建一条记录，并直接进编辑器（一步到位）。
+  Future<void> _createRecordFromFeed() async {
+    if (_fabExpanded) {
+      setState(() => _fabExpanded = false);
+      return;
+    }
+    final target = _feedKey.currentState?.newRecordTarget;
+    final parentId = (target?.id.isNotEmpty ?? false)
+        ? target!.id
+        : _containerOfModule(ContainerModule.note)?.viewId;
+    if (parentId == null || parentId.isEmpty) {
+      return;
+    }
+    final result = await ViewBackendService.createView(
+      layoutType: ViewLayoutPB.Document,
+      parentViewId: parentId,
+      name: '',
+    );
+    final view = result.toNullable();
+    if (view == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('新建失败')));
+      }
+      return;
+    }
+    unawaited(
+      recordTimelineEvent(
+        date: DateTime.now(),
+        kind: target?.kind ?? TimelineKind.note,
+        sourceViewId: view.id,
+      ),
+    );
+    await _feedKey.currentState?.reload();
+    if (mounted) {
+      await context.pushView(view);
+      await _feedKey.currentState?.reload();
+    }
+  }
+
+  /// FAB 展开菜单里的「新建日记」：今天没有日记就创建，然后直接打开。
+  Future<void> _createDiaryFromFeed() async {
+    setState(() => _fabExpanded = false);
+    try {
+      final service = await createDiaryService(
+        workspaceId: widget.workspaceId,
+        userId: widget.userProfile.id,
+      );
+      final entry = await service.openOrCreate(DateTime.now());
+      await _feedKey.currentState?.reload();
+      final documentId = entry.documentId;
+      if (documentId != null && mounted) {
+        await openDocumentByViewId(context, documentId);
+        await _feedKey.currentState?.reload();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('新建日记失败：$e')));
+      }
+    }
   }
 
   /// 初始化时间线：确保「时间线」Grid 页存在，并把历史日记一次性回填成事件行。
@@ -177,132 +249,66 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
           : IndexedStack(
               index: _tabIndex,
               children: [
-                // 所有容器统一：列表渲染容器内页面（含列表/网格/时间线三种样式）
-                _ContainerRecordsView(
-                  key: ValueKey('home_${_homeContainer?.viewId}'),
-                  container: _homeContainer,
+                // 记录流：跨分类的内容列表（分类降级为筛选 chips，不再"进层级"）
+                RecordsFeedPage(
+                  key: _feedKey,
                   repository: _repository,
-                  title: _homeContainer?.name ?? '首页',
-                  showDrawerButton: true,
-                  onOpenDrawer: () =>
-                      _scaffoldKey.currentState?.openDrawer(),
-                  onSwitchContainer: _containers.length > 1
-                      ? () => _scaffoldKey.currentState?.openDrawer()
-                      : null,
-                ),
-                // 「日历」= 日历分类容器（子页面列表）+ 顶栏「月历」入口
-                _ContainerRecordsView(
-                  key: ValueKey('tab_diary_${_containerOfModule(ContainerModule.diary)?.viewId}'),
-                  container: _containerOfModule(ContainerModule.diary),
-                  repository: _repository,
-                  title: '日历',
-                  showDrawerButton: true,
                   onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
-                  extraActions: [
-                    // 时间轴：打开「时间线」数据库页（原生 Grid / 可自行加日历视图）
-                    IconButton(
-                      tooltip: '时间轴',
-                      icon: const Icon(Icons.timeline_outlined),
-                      onPressed: () async {
-                        final diary =
-                            _containerOfModule(ContainerModule.diary);
-                        if (diary == null) {
-                          return;
-                        }
-                        final id = await ensureTimelinePage(
-                          parentViewId: diary.viewId,
-                        );
-                        if (id != null && context.mounted) {
-                          await openDocumentByViewId(context, id);
-                        }
-                      },
-                    ),
-                    IconButton(
-                      tooltip: '月历 / 那天日记',
-                      icon: const Icon(Icons.calendar_month_outlined),
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => CalendarView(
-                            workspaceId: widget.workspaceId,
-                            userId: widget.userProfile.id,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
-                // 「CRM」= CRM 分类容器（子页面列表）+ 顶栏「客户卡」入口
-                _ContainerRecordsView(
-                  key: ValueKey('tab_crm_${_containerOfModule(ContainerModule.crm)?.viewId}'),
-                  container: _containerOfModule(ContainerModule.crm),
-                  repository: _repository,
-                  title: 'CRM',
-                  showDrawerButton: true,
-                  onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
-                  extraActions: [
-                    IconButton(
-                      tooltip: '客户卡',
-                      icon: const Icon(Icons.people_outline),
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const CrmView()),
-                      ),
-                    ),
-                  ],
+                // 日历：直接是功能页（月历 + 时间线 + 那年今日/心情统计）
+                CalendarView(
+                  workspaceId: widget.workspaceId,
+                  userId: widget.userProfile.id,
                 ),
-                // 「AI」= AI 交流分类容器（子页面列表）+ 顶栏「AI 记忆」入口
-                _ContainerRecordsView(
-                  key: ValueKey('tab_ai_${_containerOfModule(ContainerModule.ai)?.viewId}'),
-                  container: _containerOfModule(ContainerModule.ai),
-                  repository: _repository,
-                  title: 'AI 交流',
-                  showDrawerButton: true,
-                  onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
-                  extraActions: [
-                    IconButton(
-                      tooltip: 'AI 记忆',
-                      icon: const Icon(Icons.auto_awesome_outlined),
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AiMemoryView(
-                            containers: _containers,
-                            onOpenDocument: (viewId) =>
-                                openDocumentByViewId(context, viewId),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                // CRM：直接是客户卡
+                const CrmView(),
+                // AI：直接是 AI 记忆
+                AiMemoryView(
+                  containers: _containers,
+                  onOpenDocument: (viewId) =>
+                      openDocumentByViewId(context, viewId),
                 ),
                 _buildSettingsTab(context),
               ],
             ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tabIndex,
-        onDestinationSelected: (index) => setState(() => _tabIndex = index),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.bolt_outlined),
-            selectedIcon: Icon(Icons.bolt),
-            label: '首页',
+      floatingActionButton: _tabIndex == 0
+          ? MobRecordsFab(
+              expanded: _fabExpanded,
+              onTapMain: () => unawaited(_createRecordFromFeed()),
+              onSwipeUp: () => setState(() => _fabExpanded = true),
+              onCollapse: () => setState(() => _fabExpanded = false),
+              onNewDiary: () => unawaited(_createDiaryFromFeed()),
+              onToTop: () => setState(() => _fabExpanded = false),
+            )
+          : null,
+      // 底栏对齐参考项目（高 56 + 细上边框 + 图标/标签样式）
+      bottomNavigationBar: MobBottomBar(
+        currentIndex: _tabIndex,
+        onTap: (index) => setState(() => _tabIndex = index),
+        items: const [
+          MobBottomBarItem(
+            icon: Icons.article_outlined,
+            selectedIcon: Icons.article,
+            label: '记录',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
+          MobBottomBarItem(
+            icon: Icons.calendar_month_outlined,
+            selectedIcon: Icons.calendar_month,
             label: '日历',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
+          MobBottomBarItem(
+            icon: Icons.people_outline,
+            selectedIcon: Icons.people,
             label: 'CRM',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.auto_awesome_outlined),
-            selectedIcon: Icon(Icons.auto_awesome),
+          MobBottomBarItem(
+            icon: Icons.auto_awesome_outlined,
+            selectedIcon: Icons.auto_awesome,
             label: 'AI',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
+          MobBottomBarItem(
+            icon: Icons.settings_outlined,
+            selectedIcon: Icons.settings,
             label: '设置',
           ),
         ],
@@ -362,8 +368,7 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                   style: const TextStyle(fontSize: 18),
                 ),
                 title: Text(container.name),
-                selected: container.viewId == _homeContainer?.viewId,
-                onTap: () => _selectContainer(container),
+                onTap: () => _openContainerRecords(container),
               ),
             ListTile(
               dense: true,
@@ -1667,27 +1672,14 @@ class AiMemoryViewState extends State<AiMemoryView> {
 /// 容器内容视图：展示某个容器下的所有记录（子页面）。
 class _ContainerRecordsView extends StatefulWidget {
   const _ContainerRecordsView({
-    super.key,
     required this.container,
     required this.repository,
     required this.title,
-    this.showDrawerButton = false,
-    this.onOpenDrawer,
-    this.onSwitchContainer,
-    this.extraActions = const [],
   });
 
   final ModuleContainer? container;
   final ContainerRepositoryImpl repository;
   final String title;
-  final bool showDrawerButton;
-
-  /// 打开外层（LocalHomeShell）的抽屉。
-  final VoidCallback? onOpenDrawer;
-  final VoidCallback? onSwitchContainer;
-
-  /// 额外的顶栏动作（例如「日历」分类页面上的"月历"入口）。
-  final List<Widget> extraActions;
 
   @override
   State<_ContainerRecordsView> createState() => _ContainerRecordsViewState();
@@ -1798,27 +1790,9 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
     final container = widget.container;
     return Scaffold(
       appBar: AppBar(
-        leading: widget.showDrawerButton
-            ? IconButton(
-                icon: const Icon(Icons.menu),
-                onPressed: widget.onOpenDrawer,
-              )
-            : null,
-        title: widget.onSwitchContainer == null
-            ? Text(widget.title)
-            : InkWell(
-                onTap: widget.onSwitchContainer,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(widget.title),
-                    const Icon(Icons.expand_more, size: 20),
-                  ],
-                ),
-              ),
+        // 这个页面总是被 push 打开（抽屉里点分类），因此用系统返回箭头
+        title: Text(widget.title),
         actions: [
-          // 分类页面自带的专属功能入口（如「日历」页面的月历、「CRM」页面的客户卡）
-          ...widget.extraActions,
           PopupMenuButton<_RecordViewMode>(
             tooltip: '视图样式',
             icon: Icon(
