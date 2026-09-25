@@ -467,7 +467,10 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
   Widget _buildSettingsTab(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('设置'),
+        title: const MobTitleRow(
+          icon: Icons.settings_outlined,
+          title: '设置',
+        ),
         leading: IconButton(
           icon: const Icon(Icons.menu),
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
@@ -744,7 +747,10 @@ class CalendarViewState extends State<CalendarView> {
                 icon: const Icon(Icons.menu),
                 onPressed: widget.onOpenDrawer,
               ),
-        title: const Text('日历'),
+        title: const MobTitleRow(
+          icon: Icons.calendar_month_outlined,
+          title: '日历',
+        ),
         actions: [
           TextButton(
             onPressed: () {
@@ -1402,7 +1408,10 @@ class AiMemoryViewState extends State<AiMemoryView> {
                 icon: const Icon(Icons.menu),
                 onPressed: widget.onOpenDrawer,
               ),
-        title: const Text('AI 记忆'),
+        title: const MobTitleRow(
+          icon: Icons.auto_awesome_outlined,
+          title: 'AI 记忆',
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator.adaptive())
@@ -2377,7 +2386,10 @@ class CrmViewState extends State<CrmView> with TickerProviderStateMixin {
                 icon: const Icon(Icons.menu),
                 onPressed: widget.onOpenDrawer,
               ),
-        title: const Text('CRM'),
+        title: const MobTitleRow(
+          icon: Icons.business_outlined,
+          title: 'CRM',
+        ),
         actions: [
           IconButton(
             tooltip: '新建客户',

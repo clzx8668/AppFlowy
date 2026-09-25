@@ -185,7 +185,10 @@ class _CrmHomePageState extends State<CrmHomePage>
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CRM'),
+        title: const MobTitleRow(
+          icon: Icons.business_outlined,
+          title: 'CRM',
+        ),
         actions: [
           PopupMenuButton<String>(
             tooltip: '字段设置',

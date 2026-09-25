@@ -27,6 +27,35 @@ class Mob {
 }
 
 /// 手机端列表卡片：`Card.filled` + 圆角 12 + 可点。
+/// 模块页的**主标题行**：左边模块图标 + 大标题（右侧操作仍由各页 AppBar 的 actions 负责）。
+///
+/// 参照 `E:\Dev\moodiaryCRM` 首页顶栏的做法：一个图标 + 一个标题，
+/// 不再把功能按钮堆在标题旁边（需要时收进「更多」）。
+class MobTitleRow extends StatelessWidget {
+  const MobTitleRow({super.key, required this.icon, required this.title});
+
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20, color: theme.colorScheme.onSurface),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class MobCard extends StatelessWidget {
   const MobCard({super.key, required this.child, this.onTap, this.onLongPress});
 
@@ -225,9 +254,7 @@ class MobBottomBar extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      i == currentIndex
-                          ? items[i].selectedIcon
-                          : items[i].icon,
+                      i == currentIndex ? items[i].selectedIcon : items[i].icon,
                       size: 24,
                       color: i == currentIndex
                           ? colorScheme.onSecondaryContainer
