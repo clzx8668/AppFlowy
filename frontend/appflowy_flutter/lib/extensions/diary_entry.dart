@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:app_biz_store/app_biz_store.dart';
 import 'package:app_containers/app_containers.dart';
 import 'package:app_diary_time/app_diary_time.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
+import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -79,7 +82,18 @@ class _CoreDiaryDocumentGateway implements DiaryDocumentGateway {
       name: title,
     );
     return created.fold(
-      (view) => view.id,
+      (view) {
+        // 二次开发：日记同时登记到「时间线」数据库（统一时间轴）
+        unawaited(
+          recordTimelineEvent(
+            date: date,
+            kind: TimelineKind.diary,
+            title: title,
+            sourceViewId: view.id,
+          ),
+        );
+        return view.id;
+      },
       (error) {
         Log.error('[日记] 创建日记文档失败：$title, ${error.msg}');
         throw Exception('创建日记文档失败：${error.msg}');

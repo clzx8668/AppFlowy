@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/extensions/page_tags.dart';
 import 'package:appflowy/extensions/local_home/child_pages_section.dart';
 import 'package:appflowy/extensions/kb_links/backlinks_panel.dart';
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
@@ -408,6 +409,12 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
             if (!isViewDeleted && documentId.isNotEmpty)
               ChildPagesSection(
                 key: ValueKey('child_pages_$documentId'),
+                pageId: documentId,
+              ),
+            // 二次开发：树为主 + 标签为辅 —— 页面标签
+            if (!isViewDeleted && documentId.isNotEmpty)
+              PageTagsSection(
+                key: ValueKey('page_tags_$documentId'),
                 pageId: documentId,
               ),
             if (!isViewDeleted && documentId.isNotEmpty)

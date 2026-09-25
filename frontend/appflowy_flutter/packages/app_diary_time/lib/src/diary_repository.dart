@@ -20,6 +20,15 @@ const List<BusinessMigration> kDiaryMigrations = [
     'CREATE INDEX IF NOT EXISTS idx_diary_updated_at '
         'ON $kDiaryTable (updated_at DESC);',
   ]),
+  // v2：时间线回填标记（避免每次启动重复把历史日记写成事件行）
+  BusinessMigration('diary', 2, [
+    '''
+    CREATE TABLE IF NOT EXISTS timeline_backfill (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL DEFAULT ''
+    );
+    ''',
+  ]),
 ];
 
 /// 日记仓储契约。

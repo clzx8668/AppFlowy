@@ -14,6 +14,7 @@ import 'package:appflowy/extensions/diary_entry.dart';
 import 'package:appflowy/extensions/ai_entry.dart';
 import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
+import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -83,6 +84,8 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
         );
         _loading = false;
       });
+      // 二次开发：初始化「时间线」数据库（挂在日历分类容器下）并回填历史日记
+      unawaited(_initTimeline());
     } catch (e) {
       Log.error('[本地首页] 容器加载失败：$e');
       if (mounted) {
@@ -97,6 +100,61 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
       _tabIndex = 0;
     });
     Navigator.of(context).maybePop();
+  }
+
+  /// 初始化时间线：确保「时间线」Grid 页存在，并把历史日记一次性回填成事件行。
+  Future<void> _initTimeline() async {
+    try {
+      final diary = _containerOfModule(ContainerModule.diary);
+      if (diary == null) {
+        return;
+      }
+      final viewId = await ensureTimelinePage(parentViewId: diary.viewId);
+      if (viewId == null) {
+        return;
+      }
+      await _backfillDiaryTimeline();
+    } catch (e) {
+      Log.error('[时间线] 初始化失败：$e');
+    }
+  }
+
+  /// 把业务库里的历史日记回填成时间线事件（只做一次，用业务库标记记录）。
+  Future<void> _backfillDiaryTimeline() async {
+    final baseDirectory = await getIt<ApplicationDataStorage>().getPath();
+    final database = await BusinessDatabase.open(
+      directory: baseDirectory,
+      migrations: kDiaryMigrations,
+    );
+    final done = database.raw.select(
+      "SELECT value FROM timeline_backfill WHERE key = 'diary';",
+    );
+    if (done.isNotEmpty) {
+      return;
+    }
+    final rows = database.raw.select(
+      'SELECT date_key, document_id FROM diary_entries ORDER BY date_key ASC;',
+    );
+    var count = 0;
+    for (final row in rows) {
+      final dateKey = row['date_key'] as String? ?? '';
+      final date = DateTime.tryParse(dateKey);
+      if (date == null) {
+        continue;
+      }
+      await recordTimelineEvent(
+        date: date,
+        kind: TimelineKind.diary,
+        title: dateKey,
+        sourceViewId: row['document_id'] as String? ?? '',
+      );
+      count++;
+    }
+    database.raw.execute(
+      'INSERT OR REPLACE INTO timeline_backfill (key, value) VALUES (?, ?);',
+      ['diary', DateTime.now().toIso8601String()],
+    );
+    Log.info('[时间线] 历史日记回填完成：$count 条');
   }
 
   /// 按模块取容器（分类页面用；容器尚未就绪时返回 null，页面会显示空态）。
@@ -141,6 +199,24 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                   showDrawerButton: true,
                   onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
                   extraActions: [
+                    // 时间轴：打开「时间线」数据库页（原生 Grid / 可自行加日历视图）
+                    IconButton(
+                      tooltip: '时间轴',
+                      icon: const Icon(Icons.timeline_outlined),
+                      onPressed: () async {
+                        final diary =
+                            _containerOfModule(ContainerModule.diary);
+                        if (diary == null) {
+                          return;
+                        }
+                        final id = await ensureTimelinePage(
+                          parentViewId: diary.viewId,
+                        );
+                        if (id != null && context.mounted) {
+                          await openDocumentByViewId(context, id);
+                        }
+                      },
+                    ),
                     IconButton(
                       tooltip: '月历 / 那天日记',
                       icon: const Icon(Icons.calendar_month_outlined),
@@ -1682,9 +1758,33 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
       }
       return;
     }
+    // 二次开发：新建记录同时登记到「时间线」数据库（统一时间轴）
+    unawaited(
+      recordTimelineEvent(
+        date: DateTime.now(),
+        kind: _timelineKindOfContainer(container.module),
+        title: container.name,
+        sourceViewId: view.id,
+      ),
+    );
     await _reload();
     if (mounted) {
       await context.pushView(view);
+    }
+  }
+
+  /// 分类容器 → 时间线事件类型。
+  String _timelineKindOfContainer(String module) {
+    switch (module) {
+      case ContainerModule.diary:
+        return TimelineKind.diary;
+      case ContainerModule.crm:
+        return TimelineKind.crm;
+      case ContainerModule.ai:
+        return TimelineKind.aiChat;
+      case ContainerModule.note:
+      default:
+        return TimelineKind.note;
     }
   }
 
@@ -2156,6 +2256,14 @@ class CrmViewState extends State<CrmView> {
             name: name,
             company: companyController.text.trim(),
             stage: stage,
+          );
+          // 二次开发：CRM 客户创建也登记到统一时间轴
+          unawaited(
+            recordTimelineEvent(
+              date: DateTime.now(),
+              kind: TimelineKind.crm,
+              title: name,
+            ),
           );
           if (sheetContext.mounted) {
             Navigator.of(sheetContext).pop(true);
