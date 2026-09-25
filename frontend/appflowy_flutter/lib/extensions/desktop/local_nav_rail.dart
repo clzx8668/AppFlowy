@@ -6,6 +6,11 @@ import 'package:appflowy/extensions/local_home/local_home_shell.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/workspace/workspace_service.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
@@ -93,6 +98,9 @@ class LocalNavRail extends StatelessWidget {
                       tooltip: item.label,
                       onTap: () => item.open(context),
                     ),
+                  // A 方案第 2 部分：**动态一级页面**（"个人的"下的顶层视图），
+                  // 与展开态侧栏读同一个数据源，点击用上游原有方式打开（打开为内容区页面）。
+                  _RailPageIcons(),
                 ],
               ),
             ),
@@ -101,6 +109,53 @@ class LocalNavRail extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 窄条里的**动态一级页面图标**：读的是与展开态侧栏同一个数据源
+/// （`getIt<WorkspaceService>().getPrivateViews()`），点一个就按上游原有方式打开该页面。
+///
+/// 说明：第一版所有页面共用文档图标 + 中文名 tooltip；
+/// "每个页面显示自己的图标（emoji/自定义）"紧接着补。
+class _RailPageIcons extends StatelessWidget {
+  const _RailPageIcons();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<ViewPB>>(
+      future: getIt<WorkspaceService>().getPrivateViews().then(
+            (result) => result.getOrThrow(),
+          ),
+      builder: (context, snapshot) {
+        final views = snapshot.data;
+        if (views == null || views.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          children: [
+            const SizedBox(height: 4),
+            Divider(
+              height: 9,
+              thickness: 0.5,
+              indent: 12,
+              endIndent: 12,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            for (final view in views)
+              _RailIcon(
+                icon: FlowySvgs.document_s,
+                tooltip: view.name.isEmpty ? '未命名' : view.name,
+                onTap: () => unawaited(openViewInContent(context, view)),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 按**上游原有方式**打开一个页面（内容区里的标签页），与展开态侧栏点页面一致。
+Future<void> openViewInContent(BuildContext context, ViewPB view) async {
+  getIt<TabsBloc>().add(TabsEvent.openPlugin(plugin: view.plugin()));
 }
 
 class _RailIcon extends StatelessWidget {
