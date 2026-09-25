@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/extensions/local_home/mobile_theme.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
@@ -120,6 +121,33 @@ class SettingsWorkspaceView extends StatelessWidget {
               ),
               const VSpace(16),
               // const SettingsCategorySpacer(),
+              // 二次开发：把「本地模块」的 7 套配色并进这里（唯一数据源 = MobThemeController，
+              // 手机外壳已在读它，因此这一处设置两端通用）。
+              SettingsCategory(
+                title: '本地模块配色',
+                children: [
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FlowyButton(
+                        onTap: () => showMobPaletteSheet(context),
+                        margin: const EdgeInsets.only(left: 4),
+                        iconPadding: 8,
+                        text: FlowyText.regular(
+                          MobThemeController.accentIndex.value == null
+                              ? '跟随系统'
+                              : MobPalette
+                                  .options[
+                                      MobThemeController.accentIndex.value!]
+                                  .name,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               SettingsCategory(
                 title: LocaleKeys.settings_workspacePage_theme_title.tr(),
                 description:
