@@ -622,10 +622,14 @@ class RecordsFeedPageState extends State<RecordsFeedPage>
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: widget.onOpenDrawer,
-        ),
+        // 手机（底栏外壳）里是"打开抽屉"；桌面端在内容区打开时没有抽屉，
+        // 这时交给系统自动生成返回箭头（内容区自带 Navigator）。
+        leading: widget.onOpenDrawer == null
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: widget.onOpenDrawer,
+              ),
         title: _searching
             ? TextField(
                 controller: _searchController,
