@@ -1,9 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
-import 'package:appflowy/extensions/page_tags.dart';
-import 'package:appflowy/extensions/local_home/child_pages_section.dart';
-import 'package:appflowy/extensions/kb_links/backlinks_panel.dart';
+import 'package:appflowy/extensions/local_home/doc_footer.dart';
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
@@ -356,14 +354,6 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
         context.read<PageAccessLevelBloc?>()?.state.isEditable ?? true;
     // 二次开发：双链面板需要文档 id 与标题
     final documentId = context.read<DocumentBloc>().documentId;
-    // ViewBloc 在个别入口（如独立预览页）可能不在祖先链上，取不到就用空标题，
-    // 面板本身只把标题当展示/索引元数据用，不依赖它。
-    var documentTitle = '';
-    try {
-      documentTitle = context.read<ViewBloc>().state.view.name;
-    } catch (_) {
-      // ignore: 拿不到标题不影响双链功能
-    }
 
     final editor = Directionality(
       textDirection: textDirection,
@@ -405,23 +395,12 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
         footer: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 二次开发：把页面当文件夹用 —— 列出本页子页面（手机端也能上下钻取）
+            // 二次开发：底部三块（子页面 / 标签 / 双链）收成一行折叠条，
+            // 展开后才是三块面板；右侧还有「时间标记」（内容时间 → 日历归类）。
             if (!isViewDeleted && documentId.isNotEmpty)
-              ChildPagesSection(
-                key: ValueKey('child_pages_$documentId'),
+              DocFooter(
+                key: ValueKey('doc_footer_$documentId'),
                 pageId: documentId,
-              ),
-            // 二次开发：树为主 + 标签为辅 —— 页面标签
-            if (!isViewDeleted && documentId.isNotEmpty)
-              PageTagsSection(
-                key: ValueKey('page_tags_$documentId'),
-                pageId: documentId,
-              ),
-            if (!isViewDeleted && documentId.isNotEmpty)
-              BacklinksPanel(
-                key: ValueKey('backlinks_$documentId'),
-                documentId: documentId,
-                documentTitle: documentTitle,
                 editorState: widget.editorState,
               ),
             GestureDetector(

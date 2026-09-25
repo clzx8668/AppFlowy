@@ -6,7 +6,10 @@ import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/page_tags.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
+import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
+import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
+import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:fixnum/fixnum.dart';
@@ -69,6 +72,15 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
   /// 视图形态：列表 / 网格（对齐参考项目的两种卡片）
   bool _gridMode = false;
 
+  /// 搜索态：点顶栏搜索后进入
+  bool _searching = false;
+  String _query = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  /// 摘要缓存（页面 id → 正文前若干字），列表卡片用它做预览
+  final Map<String, String> _summaries = {};
+  bool _prefetching = false;
+
   /// 新建落点：当前筛选对应的父页面 id（"全部"时为空 → 用默认容器）
   String _defaultContainerId = '';
 
@@ -76,6 +88,12 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
   void initState() {
     super.initState();
     unawaited(reload());
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   /// 供外部（新建后/从详情页返回）刷新。
@@ -119,6 +137,7 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
         _defaultContainerId = defaultContainer.viewId;
         _loading = false;
       });
+      unawaited(_prefetchSummaries());
     } catch (e) {
       Log.error('[记录流] 加载失败：$e');
       if (mounted) {
@@ -178,6 +197,18 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
 
   List<FeedRecord> get _visible {
     return _all.where((record) {
+      if (_query.isNotEmpty) {
+        final needle = _query.toLowerCase();
+        final haystack = [
+          record.title,
+          record.kind,
+          _summaries[record.view.id] ?? '',
+          record.tags.join(' '),
+        ].join(' ').toLowerCase();
+        if (!haystack.contains(needle)) {
+          return false;
+        }
+      }
       if (_kindFilter.isNotEmpty && record.kind != _kindFilter) {
         return false;
       }
@@ -186,6 +217,74 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
       }
       return true;
     }).toList(growable: false);
+  }
+
+  /// 懒加载正文摘要：每次最多并发 3 篇、每轮最多 40 篇，避免一次性读爆内核。
+  Future<void> _prefetchSummaries() async {
+    if (_prefetching) {
+      return;
+    }
+    _prefetching = true;
+    try {
+      var fetched = 0;
+      for (var i = 0; i < _all.length && fetched < 40; i += 3) {
+        final batch = _all.skip(i).take(3).toList();
+        final pending = batch
+            .where((record) => !_summaries.containsKey(record.view.id))
+            .toList();
+        if (pending.isEmpty) {
+          continue;
+        }
+        await Future.wait(
+          pending.map((record) async {
+            final text = await _summaryOfDocument(record.view.id);
+            if (text.isNotEmpty) {
+              _summaries[record.view.id] = text;
+            } else {
+              _summaries[record.view.id] = '';
+            }
+          }),
+        );
+        fetched += pending.length;
+        if (mounted) {
+          setState(() {});
+        }
+      }
+    } finally {
+      _prefetching = false;
+    }
+  }
+
+  /// 读一篇文档的正文前 80 字（失败返回空串）。
+  Future<String> _summaryOfDocument(String documentId) async {
+    try {
+      final result = await DocumentService().getDocument(documentId: documentId);
+      final document = result.fold((s) => s.toDocument(), (f) => null);
+      if (document == null) {
+        return '';
+      }
+      final buffer = StringBuffer();
+      for (final node in NodeIterator(
+        document: document,
+        startNode: document.root,
+      ).toList()) {
+        final delta = node.delta;
+        if (delta == null || delta.isEmpty) {
+          continue;
+        }
+        buffer.write(delta.toPlainText().replaceAll('\n', ' '));
+        if (buffer.length >= 80) {
+          break;
+        }
+      }
+      final text = buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (text.length <= 80) {
+        return text;
+      }
+      return '${text.substring(0, 80)}…';
+    } catch (_) {
+      return '';
+    }
   }
 
   List<String> get _kinds {
@@ -319,13 +418,39 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
           icon: const Icon(Icons.menu),
           onPressed: widget.onOpenDrawer,
         ),
-        title: const Text('记录'),
+        title: _searching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: '搜索标题 / 正文 / 标签',
+                  border: InputBorder.none,
+                ),
+                onChanged: (value) => setState(() => _query = value.trim()),
+              )
+            : const Text('记录'),
         actions: [
-          if (widget.onOpenSearch != null)
+          if (_searching)
+            IconButton(
+              tooltip: '退出搜索',
+              icon: const Icon(Icons.close),
+              onPressed: () => setState(() {
+                _searching = false;
+                _query = '';
+                _searchController.clear();
+              }),
+            )
+          else
             IconButton(
               tooltip: '搜索',
               icon: const Icon(Icons.search),
-              onPressed: widget.onOpenSearch,
+              onPressed: () {
+                if (widget.onOpenSearch != null) {
+                  widget.onOpenSearch!();
+                } else {
+                  setState(() => _searching = true);
+                }
+              },
             ),
           IconButton(
             tooltip: '筛选',
@@ -462,6 +587,19 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
                     height: 1.35,
                   ),
                 ),
+                // 正文预览（懒加载摘要；还没取到就留空，不占位）
+                if ((_summaries[record.view.id] ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _summaries[record.view.id]!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -540,6 +678,18 @@ class RecordsFeedPageState extends State<RecordsFeedPage> {
               ),
             ),
           ),
+          if ((_summaries[record.view.id] ?? '').isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _summaries[record.view.id]!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
           const SizedBox(height: 6),
           Text(
             _formatTime(record.time),

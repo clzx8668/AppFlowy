@@ -29,6 +29,18 @@ const List<BusinessMigration> kDiaryMigrations = [
     );
     ''',
   ]),
+  // v3：内容时间索引（页面的「时间标记」块 → 日期），日历按"内容时间"归类用
+  BusinessMigration('diary', 3, [
+    '''
+    CREATE TABLE IF NOT EXISTS when_index (
+      page_id TEXT NOT NULL,
+      date_key TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (page_id, date_key)
+    );
+    ''',
+    'CREATE INDEX IF NOT EXISTS idx_when_index_date ON when_index (date_key);',
+  ]),
 ];
 
 /// 日记仓储契约。

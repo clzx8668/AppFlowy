@@ -1,10 +1,12 @@
 import 'dart:convert';
 
 import 'package:app_diary_time/app_diary_time.dart';
+import 'package:appflowy/extensions/when_entry.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/callout/callout_block_component.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 /// 临时对照探针：插入我们的生活记录块之前，先插一个**上游原生 callout**。
 ///
@@ -159,6 +161,86 @@ extension LifeMetaEditorStateExtension on EditorState {
 }
 
 /// 覆写 `callout` 块的构建器：
+/// 「时间标记」块的渲染：紧凑一行（🕒 日期 + 说明），点一下可以改日期。
+class WhenMarkBlockComponentWidget extends BlockComponentStatefulWidget {
+  const WhenMarkBlockComponentWidget({
+    super.key,
+    required super.node,
+    super.showActions,
+    super.actionBuilder,
+    super.actionTrailingBuilder,
+    super.configuration = const BlockComponentConfiguration(),
+  });
+
+  @override
+  State<WhenMarkBlockComponentWidget> createState() =>
+      _WhenMarkBlockComponentWidgetState();
+}
+
+class _WhenMarkBlockComponentWidgetState
+    extends State<WhenMarkBlockComponentWidget> {
+  Node get node => widget.node;
+
+  EditorState get editorState => context.read<EditorState>();
+
+  String get _date => node.attributes[kWhenAttributeKey] as String? ?? '';
+
+  Future<void> _pickDate() async {
+    final initial = DateTime.tryParse(_date) ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) {
+      return;
+    }
+    String two(int v) => v.toString().padLeft(2, '0');
+    final value = '${picked.year}-${two(picked.month)}-${two(picked.day)}';
+    final transaction = editorState.transaction
+      ..updateNode(node, {kWhenAttributeKey: value});
+    await editorState.apply(transaction);
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: widget.configuration.padding(node),
+      child: InkWell(
+        onTap: _pickDate,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Row(
+            children: [
+              const Text('🕒', style: TextStyle(fontSize: 14)),
+              const SizedBox(width: 6),
+              Text(
+                _date.isEmpty ? '未设置时间' : _date,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '内容时间（日历按它归类）',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 覆写 `callout` 块的构建器：
 /// - 带 `af_life_meta` 标记 → 渲染我们自己的生活记录卡片（心情/天气/位置）；
 /// - 其它 callout → 原样交回上游构建器，行为完全不变。
 ///
@@ -182,6 +264,20 @@ class LifeMetaCalloutBlockComponentBuilder extends BlockComponentBuilder {
   @override
   BlockComponentWidget build(BlockComponentContext blockComponentContext) {
     final node = blockComponentContext.node;
+    // 二次开发：「时间标记」块（callout + af_when）也走我们的构建器，
+    // 渲染成一行紧凑的时间标签，而不是默认的 callout 大卡片。
+    if (node.attributes[kWhenAttributeKey] is String) {
+      return WhenMarkBlockComponentWidget(
+        key: node.key,
+        node: node,
+        configuration: configuration,
+        showActions: showActions(node),
+        actionBuilder: (context, state) =>
+            actionBuilder(blockComponentContext, state),
+        actionTrailingBuilder: (context, state) =>
+            actionTrailingBuilder(blockComponentContext, state),
+      );
+    }
     if (!isLifeMetaNode(node)) {
       return _fallback.build(blockComponentContext);
     }

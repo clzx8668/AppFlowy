@@ -5,6 +5,8 @@ import 'package:appflowy/extensions/diary_entry.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
+import 'package:appflowy/extensions/calendar_china_days.dart';
+import 'package:appflowy/extensions/when_entry.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
@@ -118,10 +120,27 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
   Future<Map<String, List<ViewPB>>> _loadRecordsByDay() async {
     final result = await ViewBackendService.getAllViews();
     final views = result.toNullable()?.items ?? const <ViewPB>[];
+    final byId = {for (final view in views) view.id: view};
+    final whenIndex = await loadWhenIndex();
     final byDay = <String, List<ViewPB>>{};
     const shellNames = {'闪念', '工作记录', '生活日记'};
+    // 已经有「时间标记」的页面：按内容时间归类（优先），不再看最后编辑时间
+    final markedPages = <String>{};
+    for (final entry in whenIndex.entries) {
+      for (final pageId in entry.value) {
+        final view = byId[pageId];
+        if (view == null) {
+          continue;
+        }
+        markedPages.add(pageId);
+        byDay.putIfAbsent(entry.key, () => []).add(view);
+      }
+    }
     for (final view in views) {
       if (view.layout != ViewLayoutPB.Document) {
+        continue;
+      }
+      if (markedPages.contains(view.id)) {
         continue;
       }
       if (view.extra.contains('af_container')) {
@@ -476,6 +495,7 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
   }) {
     final now = DateTime.now();
     final isToday = DiaryEntry.keyOf(now) == DiaryEntry.keyOf(date);
+    final chinaDay = chinaDayOfDate(date);
     final dotColor = entry == null || entry.mood.isEmpty
         ? theme.colorScheme.primary
         : _moodColor(entry.mood, theme);
@@ -507,21 +527,37 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
                     isSelected || isToday ? FontWeight.w600 : FontWeight.w400,
                 color: isSelected
                     ? theme.colorScheme.onPrimary
-                    : theme.colorScheme.onSurface,
+                    : (chinaDay == null
+                        ? theme.colorScheme.onSurface
+                        : (chinaDay.isHoliday
+                            ? const Color(0xFFE64A19)
+                            : theme.colorScheme.outline)),
               ),
             ),
           ),
-          const SizedBox(height: 2),
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: (entry != null || hasRecords)
-                  ? dotColor
-                  : Colors.transparent,
+          const SizedBox(height: 1),
+          // 有内容 → 圆点；节假日/调休 → 小字标记（优先显示标记，避免拥挤）
+          if (chinaDay != null)
+            Text(
+              chinaDay.isHoliday ? '休' : '班',
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 9,
+                color: chinaDay.isHoliday
+                    ? const Color(0xFFE64A19)
+                    : theme.colorScheme.outline,
+              ),
+            )
+          else
+            Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: (entry != null || hasRecords)
+                    ? dotColor
+                    : Colors.transparent,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -536,7 +572,10 @@ class _IosCalendarPageState extends State<IosCalendarPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _friendlyDate(theme, _selected),
+            _friendlyDate(theme, _selected) +
+                (chinaDayOfDate(_selected) == null
+                    ? ''
+                    : ' · ${chinaDayOfDate(_selected)!.name}'),
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
             ),
