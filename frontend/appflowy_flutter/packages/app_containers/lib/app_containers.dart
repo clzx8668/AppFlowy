@@ -4,7 +4,10 @@
 /// 我们的做法（见 doc/现有模块复用与扩展分析.md）：
 /// - **容器 = 顶层页面**，用 `view.extra` 里的自定义标记区分（`af_container` / `af_module`）；
 /// - 记录 = 容器下的子页面（保留块编辑、双链、搜索、回收站）；
-/// - 预置 4 个容器：闪念 / 笔记 / CRM / AI，后续可在设置页新建更多容器。
+/// - 预置 4 个分类容器：**笔记 / 日历 / CRM / AI 交流**（与上游默认的 Getting started 页面同类，
+///   只是多写了标记，没有任何新数据模型）；
+/// - 「闪念 / 工作记录 / 生活日记」是**笔记容器下的普通子页面**（见 [kDefaultSubPages]），可继续无限嵌套；
+/// - 后续可在设置页新建更多容器。
 ///
 /// 本包只包含模型与契约（不依赖内核），具体实现由 App 侧适配器注入。
 library app_containers;
@@ -15,6 +18,7 @@ class ContainerModule {
 
   static const String flashNote = 'flash_note';
   static const String note = 'note';
+  static const String diary = 'diary';
   static const String crm = 'crm';
   static const String ai = 'ai';
 
@@ -58,14 +62,14 @@ class ContainerSpec {
 /// 在此清单加一行即可（历史数据不受影响，只影响新建落点）。
 const List<ContainerSpec> kDefaultContainers = [
   ContainerSpec(
-    module: ContainerModule.flashNote,
-    name: '闪念',
-    icon: '⚡️',
-  ),
-  ContainerSpec(
     module: ContainerModule.note,
     name: '笔记',
     icon: '📝',
+  ),
+  ContainerSpec(
+    module: ContainerModule.diary,
+    name: '日历',
+    icon: '📅',
   ),
   ContainerSpec(
     module: ContainerModule.crm,
@@ -74,10 +78,23 @@ const List<ContainerSpec> kDefaultContainers = [
   ),
   ContainerSpec(
     module: ContainerModule.ai,
-    name: 'AI',
+    name: 'AI 交流',
     icon: '🤖',
   ),
 ];
+
+/// 默认子页面：容器 → 该容器下自动存在的**普通页面**（沿用上游页面模型，可再无限嵌套）。
+const Map<String, List<({String name, String icon})>> kDefaultSubPages = {
+  ContainerModule.note: [
+    (name: '闪念', icon: '⚡️'),
+    (name: '工作记录', icon: '🗂'),
+    (name: '生活日记', icon: '📔'),
+  ],
+};
+
+/// 日记文档（标题=日期）默认挂在「笔记 → 生活日记」下。
+const String kDiaryParentContainerModule = ContainerModule.note;
+const String kDiaryParentPageName = '生活日记';
 
 /// 运行期的容器（= 一个带标记的顶层页面）。
 class ModuleContainer {

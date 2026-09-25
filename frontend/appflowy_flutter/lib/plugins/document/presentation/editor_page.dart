@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/extensions/local_home/child_pages_section.dart';
 import 'package:appflowy/extensions/kb_links/backlinks_panel.dart';
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
@@ -403,6 +404,12 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
         footer: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 二次开发：把页面当文件夹用 —— 列出本页子页面（手机端也能上下钻取）
+            if (!isViewDeleted && documentId.isNotEmpty)
+              ChildPagesSection(
+                key: ValueKey('child_pages_$documentId'),
+                pageId: documentId,
+              ),
             if (!isViewDeleted && documentId.isNotEmpty)
               BacklinksPanel(
                 key: ValueKey('backlinks_$documentId'),

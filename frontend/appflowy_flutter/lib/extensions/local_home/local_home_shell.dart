@@ -67,16 +67,18 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
 
   Future<void> _load() async {
     try {
-      // 先确保预设容器存在，再拉取全部容器（含用户在设置页/抽屉里新建的自定义容器）
-      await _repository.ensureDefaultContainers();
+      // 先做一次结构对齐：确保 4 个分类容器就绪，并把「闪念」等降级为「笔记」下的子页面
+      // （幂等；只动页面树结构，不动任何正文），再拉取全部容器。
+      await _repository.alignStructure();
       final containers = await _repository.listContainers();
       if (!mounted) {
         return;
       }
       setState(() {
         _containers = containers;
+        // 首页默认打开「笔记」分类容器（里面是 闪念 / 工作记录 / 生活日记 等子页面）
         _homeContainer = containers.firstWhere(
-          (c) => c.module == ContainerModule.flashNote,
+          (c) => c.module == ContainerModule.note,
           orElse: () => containers.first,
         );
         _loading = false;
@@ -95,6 +97,16 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
       _tabIndex = 0;
     });
     Navigator.of(context).maybePop();
+  }
+
+  /// 按模块取容器（分类页面用；容器尚未就绪时返回 null，页面会显示空态）。
+  ModuleContainer? _containerOfModule(String module) {
+    for (final container in _containers) {
+      if (container.module == module) {
+        return container;
+      }
+    }
+    return null;
   }
 
   @override
@@ -120,22 +132,70 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                       ? () => _scaffoldKey.currentState?.openDrawer()
                       : null,
                 ),
-                CalendarView(
-                  workspaceId: widget.workspaceId,
-                  userId: widget.userProfile.id,
-                  onOpenDrawer: () =>
-                      _scaffoldKey.currentState?.openDrawer(),
+                // 「日历」= 日历分类容器（子页面列表）+ 顶栏「月历」入口
+                _ContainerRecordsView(
+                  key: ValueKey('tab_diary_${_containerOfModule(ContainerModule.diary)?.viewId}'),
+                  container: _containerOfModule(ContainerModule.diary),
+                  repository: _repository,
+                  title: '日历',
+                  showDrawerButton: true,
+                  onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
+                  extraActions: [
+                    IconButton(
+                      tooltip: '月历 / 那天日记',
+                      icon: const Icon(Icons.calendar_month_outlined),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => CalendarView(
+                            workspaceId: widget.workspaceId,
+                            userId: widget.userProfile.id,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                CrmView(
-                  onOpenDrawer: () =>
-                      _scaffoldKey.currentState?.openDrawer(),
+                // 「CRM」= CRM 分类容器（子页面列表）+ 顶栏「客户卡」入口
+                _ContainerRecordsView(
+                  key: ValueKey('tab_crm_${_containerOfModule(ContainerModule.crm)?.viewId}'),
+                  container: _containerOfModule(ContainerModule.crm),
+                  repository: _repository,
+                  title: 'CRM',
+                  showDrawerButton: true,
+                  onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
+                  extraActions: [
+                    IconButton(
+                      tooltip: '客户卡',
+                      icon: const Icon(Icons.people_outline),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const CrmView()),
+                      ),
+                    ),
+                  ],
                 ),
-                AiMemoryView(
-                  containers: _containers,
-                  onOpenDrawer: () =>
-                      _scaffoldKey.currentState?.openDrawer(),
-                  onOpenDocument: (viewId) =>
-                      openDocumentByViewId(context, viewId),
+                // 「AI」= AI 交流分类容器（子页面列表）+ 顶栏「AI 记忆」入口
+                _ContainerRecordsView(
+                  key: ValueKey('tab_ai_${_containerOfModule(ContainerModule.ai)?.viewId}'),
+                  container: _containerOfModule(ContainerModule.ai),
+                  repository: _repository,
+                  title: 'AI 交流',
+                  showDrawerButton: true,
+                  onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
+                  extraActions: [
+                    IconButton(
+                      tooltip: 'AI 记忆',
+                      icon: const Icon(Icons.auto_awesome_outlined),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AiMemoryView(
+                            containers: _containers,
+                            onOpenDocument: (viewId) =>
+                                openDocumentByViewId(context, viewId),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 _buildSettingsTab(context),
               ],
@@ -570,10 +630,13 @@ class CalendarViewState extends State<CalendarView> {
     final selectedEntry = _entries[DiaryEntry.keyOf(_selected)];
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: widget.onOpenDrawer,
-        ),
+        // 作为独立页面被 push 时（onOpenDrawer 为空）用系统返回箭头，避免出现灰掉的菜单图标
+        leading: widget.onOpenDrawer == null
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: widget.onOpenDrawer,
+              ),
         title: const Text('日历'),
         actions: [
           TextButton(
@@ -1226,10 +1289,12 @@ class AiMemoryViewState extends State<AiMemoryView> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: widget.onOpenDrawer,
-        ),
+        leading: widget.onOpenDrawer == null
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: widget.onOpenDrawer,
+              ),
         title: const Text('AI 记忆'),
       ),
       body: _loading
@@ -1533,6 +1598,7 @@ class _ContainerRecordsView extends StatefulWidget {
     this.showDrawerButton = false,
     this.onOpenDrawer,
     this.onSwitchContainer,
+    this.extraActions = const [],
   });
 
   final ModuleContainer? container;
@@ -1543,6 +1609,9 @@ class _ContainerRecordsView extends StatefulWidget {
   /// 打开外层（LocalHomeShell）的抽屉。
   final VoidCallback? onOpenDrawer;
   final VoidCallback? onSwitchContainer;
+
+  /// 额外的顶栏动作（例如「日历」分类页面上的"月历"入口）。
+  final List<Widget> extraActions;
 
   @override
   State<_ContainerRecordsView> createState() => _ContainerRecordsViewState();
@@ -1648,6 +1717,8 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
                 ),
               ),
         actions: [
+          // 分类页面自带的专属功能入口（如「日历」页面的月历、「CRM」页面的客户卡）
+          ...widget.extraActions,
           PopupMenuButton<_RecordViewMode>(
             tooltip: '视图样式',
             icon: Icon(
@@ -2172,10 +2243,12 @@ class CrmViewState extends State<CrmView> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: widget.onOpenDrawer,
-        ),
+        leading: widget.onOpenDrawer == null
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: widget.onOpenDrawer,
+              ),
         title: const Text('CRM'),
         actions: [
           IconButton(
