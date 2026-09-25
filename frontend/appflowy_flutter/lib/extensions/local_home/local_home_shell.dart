@@ -17,6 +17,7 @@ import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/extensions/local_home/mobile_theme.dart';
+import 'package:appflowy/extensions/local_home/ios_calendar_page.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/home/mobile_home_setting_page.dart';
@@ -265,10 +266,12 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
                   repository: _repository,
                   onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
                 ),
-                // 日历：直接是功能页（月历 + 时间线 + 那年今日/心情统计）
-                CalendarView(
+                // 日历：自建 iOS 风格日历（月历 + 当天记录 + 时间线/那年今日/心情统计）
+                IosCalendarPage(
                   workspaceId: widget.workspaceId,
                   userId: widget.userProfile.id,
+                  timelineParentViewId:
+                      _containerOfModule(ContainerModule.diary)?.viewId,
                 ),
                 // CRM：直接是客户卡
                 const CrmView(),
