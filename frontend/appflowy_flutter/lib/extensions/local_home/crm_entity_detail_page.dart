@@ -46,9 +46,6 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
   List<String> _contactIds = const [];
   List<String> _customerIds = const [];
 
-  /// 「对多」关联的展开状态：默认折叠，只显示「名称 + 数量 + ＋」，点开才列出来。
-  final Set<String> _expandedSections = {};
-
   /// 一对多派生列表（客户下的项目/合同/收款；项目下的合同/收款）。
   List<CrmEntity> _derivedProjects = const [];
   List<CrmEntity> _derivedContracts = const [];
@@ -1082,82 +1079,65 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
         return;
       }
 
-      final expanded = _expandedSections.contains(title);
       rows.add(
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              InkWell(
-                onTap: () => setState(() {
-                  if (expanded) {
-                    _expandedSections.remove(title);
-                  } else {
-                    _expandedSections.add(title);
-                  }
-                }),
-                borderRadius: BorderRadius.circular(Mob.radiusSmall),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 92,
-                      child: Text(
-                        title,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.outline,
-                        ),
-                      ),
+              // 对多关联：标题行 + 已选项**直接以 chips 展示**（整行宽度留给 chips），
+              // 「＋」打开下拉列表继续添加；chips 点开可进实体、可删除。
+              Row(
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.outline,
                     ),
-                    Expanded(
-                      child: Text(
-                        items.isEmpty ? '未关联' : '${items.length} 项',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: items.isEmpty
-                              ? theme.colorScheme.outlineVariant
-                              : null,
-                        ),
-                      ),
-                    ),
-                    if (items.isNotEmpty)
-                      Icon(
-                        expanded ? Icons.expand_less : Icons.expand_more,
-                        size: 18,
-                        color: theme.colorScheme.outline,
-                      ),
-                    if (onAdd != null)
-                      IconButton(
-                        tooltip: addLabel ?? '添加',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.add_circle_outline, size: 18),
-                        onPressed: () => unawaited(onAdd()),
-                      ),
-                  ],
-                ),
-              ),
-              if (expanded)
-                for (final item in items)
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.subdirectory_arrow_right, size: 16),
-                    title: Text(item.title.isEmpty ? '未命名' : item.title),
-                    subtitle: item.stage.isEmpty
-                        ? null
-                        : Text(
-                            item.stage,
-                            style: theme.textTheme.labelSmall,
-                          ),
-                    onTap: () => unawaited(
-                      openCrmEntity(context, item, widget.repository),
-                    ),
-                    trailing: onRemove == null
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.close, size: 16),
-                            onPressed: () => unawaited(onRemove(item)),
-                          ),
                   ),
+                  const Spacer(),
+                  if (onAdd != null)
+                    IconButton(
+                      tooltip: addLabel ?? '添加',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.add_circle_outline, size: 18),
+                      onPressed: () => unawaited(onAdd()),
+                    ),
+                ],
+              ),
+              if (items.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 2, bottom: 2),
+                  child: Text(
+                    '未关联',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.outlineVariant,
+                    ),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final item in items)
+                        InputChip(
+                          label: Text(
+                            item.title.isEmpty ? '未命名' : item.title,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => unawaited(
+                            openCrmEntity(context, item, widget.repository),
+                          ),
+                          onDeleted: onRemove == null
+                              ? null
+                              : () => unawaited(onRemove(item)),
+                        ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
