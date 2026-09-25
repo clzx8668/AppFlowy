@@ -309,22 +309,22 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
           ),
           MobBottomBarItem(
             icon: Icons.calendar_month_outlined,
-            selectedIcon: Icons.calendar_month,
+            selectedIcon: Icons.calendar_month_rounded,
             label: '日历',
           ),
           MobBottomBarItem(
-            icon: Icons.people_outline,
-            selectedIcon: Icons.people,
+            icon: Icons.business_outlined,
+            selectedIcon: Icons.business_rounded,
             label: 'CRM',
           ),
           MobBottomBarItem(
             icon: Icons.auto_awesome_outlined,
-            selectedIcon: Icons.auto_awesome,
+            selectedIcon: Icons.auto_awesome_rounded,
             label: 'AI',
           ),
           MobBottomBarItem(
             icon: Icons.settings_outlined,
-            selectedIcon: Icons.settings,
+            selectedIcon: Icons.settings_rounded,
             label: '设置',
           ),
         ],
@@ -509,8 +509,8 @@ class _LocalHomeShellState extends State<LocalHomeShell> {
             subtitle: Text(
               MobThemeController.accentIndex.value == null
                   ? '跟随系统'
-                  : MobPalette.options[MobThemeController.accentIndex.value!]
-                      .name,
+                  : MobPalette
+                      .options[MobThemeController.accentIndex.value!].name,
             ),
             onTap: () => unawaited(showMobPaletteSheet(context)),
           ),
@@ -675,8 +675,7 @@ class CalendarViewState extends State<CalendarView> {
                       '${option.$1} ${option.$2}',
                       style: const TextStyle(fontSize: 15),
                     ),
-                    onPressed: () =>
-                        Navigator.of(sheetContext).pop(option.$1),
+                    onPressed: () => Navigator.of(sheetContext).pop(option.$1),
                   ),
               ],
             ),
@@ -839,9 +838,7 @@ class CalendarViewState extends State<CalendarView> {
             height: 36,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: selected
-                  ? theme.colorScheme.surface
-                  : Colors.transparent,
+              color: selected ? theme.colorScheme.surface : Colors.transparent,
               borderRadius: BorderRadius.circular(9),
               boxShadow: selected
                   ? const [
@@ -1201,9 +1198,7 @@ class CalendarViewState extends State<CalendarView> {
             children: [
               ActionChip(
                 label: Text(
-                  entry == null || entry.mood.isEmpty
-                      ? '😊 记心情'
-                      : entry.mood,
+                  entry == null || entry.mood.isEmpty ? '😊 记心情' : entry.mood,
                   style: const TextStyle(fontSize: 15),
                 ),
                 onPressed: () => _pickMoodOrWeather(mood: true),
@@ -1382,7 +1377,11 @@ class AiMemoryViewState extends State<AiMemoryView> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('生成失败：${e.toString().replaceFirst('Exception: ', '')}')),
+          SnackBar(
+            content: Text(
+              '生成失败：${e.toString().replaceFirst('Exception: ', '')}',
+            ),
+          ),
         );
       }
     } finally {
@@ -1571,8 +1570,9 @@ class AiMemoryViewState extends State<AiMemoryView> {
           else
             for (final doc in _recentDocs)
               InkWell(
-                onTap: () =>
-                    unawaited(widget.onOpenDocument?.call(doc.id) ?? Future.value()),
+                onTap: () => unawaited(
+                  widget.onOpenDocument?.call(doc.id) ?? Future.value(),
+                ),
                 borderRadius: BorderRadius.circular(10),
                 child: Padding(
                   padding:
@@ -1869,7 +1869,8 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
                       children: [
                         SizedBox(
                           height: MediaQuery.of(context).size.height * 0.6,
-                          child: _EmptyHint(containerName: container?.name ?? ''),
+                          child:
+                              _EmptyHint(containerName: container?.name ?? ''),
                         ),
                       ],
                     )
@@ -2057,8 +2058,7 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
     );
   }
 
-  String _titleOf(ViewPB view) =>
-      view.name.isEmpty ? '未命名页面' : view.name;
+  String _titleOf(ViewPB view) => view.name.isEmpty ? '未命名页面' : view.name;
 
   DateTime? _timeOf(ViewPB view) {
     final timestamp = _sortKey(view);
@@ -2170,7 +2170,6 @@ class _EmptyHint extends StatelessWidget {
     );
   }
 }
-
 
 /// CRM 标签页：客户档案（独立业务库）+ 阶段筛选 + 快录。
 ///
@@ -2293,70 +2292,69 @@ class CrmViewState extends State<CrmView> with TickerProviderStateMixin {
         }
 
         return Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 20,
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 24,
-        ),
-        child: StatefulBuilder(
-          builder: (context, setSheetState) => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '新建客户',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: nameController,
-                autofocus: true,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => unawaited(submit()),
-                decoration: const InputDecoration(
-                  labelText: '客户姓名',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(14)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: companyController,
-                decoration: const InputDecoration(
-                  labelText: '公司 / 单位',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(14)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final option in kCrmStages)
-                    ChoiceChip(
-                      label: Text(option),
-                      selected: stage == option,
-                      onSelected: (_) =>
-                          setSheetState(() => stage = option),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => unawaited(submit()),
-                  child: const Text('保存'),
-                ),
-              ),
-            ],
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 24,
           ),
-        ),
-      );
+          child: StatefulBuilder(
+            builder: (context, setSheetState) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '新建客户',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => unawaited(submit()),
+                  decoration: const InputDecoration(
+                    labelText: '客户姓名',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(14)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: companyController,
+                  decoration: const InputDecoration(
+                    labelText: '公司 / 单位',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(14)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final option in kCrmStages)
+                      ChoiceChip(
+                        label: Text(option),
+                        selected: stage == option,
+                        onSelected: (_) => setSheetState(() => stage = option),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => unawaited(submit()),
+                    child: const Text('保存'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
       },
     );
     if (created ?? false) {
@@ -2421,8 +2419,7 @@ class CrmViewState extends State<CrmView> with TickerProviderStateMixin {
                             itemBuilder: (context, index) {
                               final customer = _customers[index];
                               return _RecordCard(
-                                margin:
-                                    const EdgeInsets.symmetric(vertical: 4),
+                                margin: const EdgeInsets.symmetric(vertical: 4),
                                 // 点开客户详情（编辑档案 / 阶段 / 跟进记录）
                                 onTap: () => Navigator.of(context).push(
                                   MaterialPageRoute(

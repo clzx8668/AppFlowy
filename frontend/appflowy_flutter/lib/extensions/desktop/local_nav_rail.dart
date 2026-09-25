@@ -1,12 +1,11 @@
 import 'dart:async';
 
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
-import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/local_home/local_home_shell.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
-import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -55,7 +54,8 @@ class LocalNavRail extends StatelessWidget {
           SizedBox(
             height: 28,
             child: Center(
-              child: FlowySvg(FlowySvgs.app_logo_xl, size: const Size.square(24)),
+              child:
+                  FlowySvg(FlowySvgs.app_logo_xl, size: const Size.square(24)),
             ),
           ),
           const SizedBox(height: 6),
@@ -86,7 +86,7 @@ class _RailIcon extends StatelessWidget {
     required this.onTap,
   });
 
-  final FlowySvgData icon;
+  final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
 
@@ -107,7 +107,7 @@ class _RailIcon extends StatelessWidget {
               width: 40,
               height: 40,
               child: Center(
-                child: FlowySvg(icon, size: const Size.square(20)),
+                child: Icon(icon, size: 20),
               ),
             ),
           ),
@@ -119,8 +119,8 @@ class _RailIcon extends StatelessWidget {
 
 /// 一条本地导航项：图标 + 名称 + 打开动作。
 ///
-/// 图标一律用上游同一套 `FlowySvgs`（与展开态侧栏「本地模块」用的**完全相同的图标**），
-/// 这样收起 / 展开两种形态一一对应（2026-09-26 产品纠正）。
+/// 图标与移动端底栏五个标签**同一套**（参照 moodiaryCRM 的目的地图标），
+/// 这样收起 / 展开 / 手机三处的入口一一对应（2026-09-26 产品纠正）。
 class LocalNavItem {
   const LocalNavItem({
     required this.icon,
@@ -128,7 +128,7 @@ class LocalNavItem {
     required this.open,
   });
 
-  final FlowySvgData icon;
+  final IconData icon;
   final String label;
   final void Function(BuildContext context) open;
 }
@@ -144,7 +144,7 @@ List<LocalNavItem> localNavItems({
 
   return [
     LocalNavItem(
-      icon: FlowySvgs.document_s,
+      icon: Icons.article_outlined,
       label: '记录流（首页）',
       open: (context) => push(
         context,
@@ -157,7 +157,7 @@ List<LocalNavItem> localNavItems({
       ),
     ),
     LocalNavItem(
-      icon: FlowySvgs.calendar_s,
+      icon: Icons.calendar_month_outlined,
       label: '日历 · 日记',
       open: (context) => push(
         context,
@@ -165,25 +165,23 @@ List<LocalNavItem> localNavItems({
       ),
     ),
     LocalNavItem(
-      icon: FlowySvgs.person_s,
+      icon: Icons.business_outlined,
       label: 'CRM',
       open: (context) => push(context, const CrmView()),
     ),
     LocalNavItem(
-      icon: FlowySvgs.ai_sparks_s,
+      icon: Icons.auto_awesome_outlined,
       label: 'AI 记忆',
       open: (context) => push(context, const AiMemoryView()),
     ),
     LocalNavItem(
-      icon: FlowySvgs.link_to_page_s,
-      label: '知识库双链',
-      open: (context) => push(context, const KbLinksSettingsPage()),
-    ),
-    LocalNavItem(
-      icon: FlowySvgs.settings_sync_m,
-      label: '快照同步',
-      open: (context) =>
-          push(context, WebDavSettingsPage(workspaceId: workspaceId)),
+      // 第 5 个与移动端底栏一致（双链 / 快照同步仍留在展开态侧栏的「本地模块」里）
+      icon: Icons.settings_outlined,
+      label: '设置',
+      open: (context) => showSettingsDialog(
+        context,
+        userWorkspaceBloc: context.read<UserWorkspaceBloc>(),
+      ),
     ),
   ];
 }
@@ -253,7 +251,7 @@ class LocalNavDrawer extends StatelessWidget {
               for (final item in items)
                 ListTile(
                   dense: true,
-                  leading: FlowySvg(item.icon, size: const Size.square(20)),
+                  leading: Icon(item.icon, size: 20),
                   title: Text(item.label),
                   onTap: () {
                     Navigator.of(context).pop();
