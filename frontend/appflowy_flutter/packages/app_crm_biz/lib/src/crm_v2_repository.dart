@@ -17,6 +17,15 @@ const String kCrmLinkTable = 'crm_links';
 /// 自定义字段定义表（扩展字段的"表结构"）。
 const String kCrmFieldDefTable = 'crm_field_defs';
 
+/// 实体之间的**多对多关系**表（客户 ↔ 联系人 等）。
+///
+/// 一对多/一对一不放这里，直接用实体上的外键列表达：
+/// - 项目 → 客户（一对一）：`project.customer_id`
+/// - 合同 → 项目（一对一）：`contract.project_id`
+/// - 项目/合同 → 客户（多对一）：`customer_id`
+/// - 收款 → 合同：`receivable.contract_id`
+const String kCrmRelationTable = 'crm_relations';
+
 const List<BusinessMigration> kCrmV2Migrations = [
   BusinessMigration('crm', 2, [
     '''
@@ -77,6 +86,24 @@ const List<BusinessMigration> kCrmV2Migrations = [
       PRIMARY KEY (entity_type, key)
     );
     ''',
+  ]),
+  // v3：多对多关系表 + 收款→合同外键（负责人字段保留但默认不展示）
+  BusinessMigration('crm', 3, [
+    '''
+    CREATE TABLE IF NOT EXISTS $kCrmRelationTable (
+      from_type TEXT NOT NULL,
+      from_id TEXT NOT NULL,
+      to_type TEXT NOT NULL,
+      to_id TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (from_type, from_id, to_type, to_id)
+    );
+    ''',
+    'CREATE INDEX IF NOT EXISTS idx_crm_relations_from '
+        'ON $kCrmRelationTable (from_type, from_id);',
+    'CREATE INDEX IF NOT EXISTS idx_crm_relations_to '
+        'ON $kCrmRelationTable (to_type, to_id);',
+    'ALTER TABLE $kCrmEntityTable ADD COLUMN contract_id TEXT NOT NULL DEFAULT "";',
   ]),
 ];
 
@@ -170,9 +197,9 @@ class CrmEntityRepository {
     _db.raw.execute(
       'INSERT OR REPLACE INTO $kCrmEntityTable '
       '(id, type, title, subtitle, stage, amount, owner, phone, note, '
-      'event_time, customer_id, contact_id, project_id, lead_id, extra, '
+      'event_time, customer_id, contact_id, project_id, lead_id, contract_id, extra, '
       'created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
       [
         entity.id,
         entity.type,
@@ -188,6 +215,7 @@ class CrmEntityRepository {
         entity.contactId,
         entity.projectId,
         entity.leadId,
+        entity.contractId,
         jsonEncode(entity.extra),
         entity.createdAt.millisecondsSinceEpoch,
         entity.updatedAt.millisecondsSinceEpoch,
@@ -301,6 +329,66 @@ class CrmEntityRepository {
 
   // ------------------------------------------------------------ 自定义字段
 
+  // ------------------------------------------------------ 多对多关系
+  //
+  // 目前用于「客户 ↔ 联系人」：一个联系人可服务多个客户，一个客户可有多个联系人。
+
+  /// 取某实体关联的另一类实体 id 列表。
+  Future<List<String>> relationsOf({
+    required String fromType,
+    required String fromId,
+    required String toType,
+  }) async {
+    final rows = _db.raw.select(
+      'SELECT to_id FROM $kCrmRelationTable '
+      'WHERE from_type = ? AND from_id = ? AND to_type = ?;',
+      [fromType, fromId, toType],
+    );
+    return rows.map((row) => row['to_id'] as String).toList();
+  }
+
+  /// 双向写入关联（便于两边都能查到）。
+  Future<void> linkEntities({
+    required String fromType,
+    required String fromId,
+    required String toType,
+    required String toId,
+    String label = '',
+  }) async {
+    _db.raw.execute(
+      'INSERT OR REPLACE INTO $kCrmRelationTable '
+      '(from_type, from_id, to_type, to_id, label) VALUES (?, ?, ?, ?, ?);',
+      [fromType, fromId, toType, toId, label],
+    );
+    _db.raw.execute(
+      'INSERT OR REPLACE INTO $kCrmRelationTable '
+      '(from_type, from_id, to_type, to_id, label) VALUES (?, ?, ?, ?, ?);',
+      [toType, toId, fromType, fromId, label],
+    );
+  }
+
+  Future<void> unlinkEntities({
+    required String fromType,
+    required String fromId,
+    required String toType,
+    required String toId,
+  }) async {
+    _db.raw.execute(
+      'DELETE FROM $kCrmRelationTable WHERE '
+      '((from_type = ? AND from_id = ? AND to_type = ? AND to_id = ?) OR '
+      ' (from_type = ? AND from_id = ? AND to_type = ? AND to_id = ?));',
+      [fromType, fromId, toType, toId, toType, toId, fromType, fromId],
+    );
+  }
+
+  /// 按外键列查（例如某客户下的项目 / 合同、某项目下的合同）。
+  Future<List<CrmEntity>> listByColumn({
+    required String type,
+    required String column,
+    required String value,
+  }) =>
+      listRelated(type: type, column: column, value: value);
+
   Future<List<CrmFieldDef>> fieldDefs(String type) async {
     final rows = _db.raw.select(
       'SELECT * FROM $kCrmFieldDefTable WHERE entity_type = ? '
@@ -377,6 +465,7 @@ class CrmEntityRepository {
       contactId: row['contact_id'] as String? ?? '',
       projectId: row['project_id'] as String? ?? '',
       leadId: row['lead_id'] as String? ?? '',
+      contractId: row['contract_id'] as String? ?? '',
       extra: extra,
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         row['created_at'] as int? ?? 0,

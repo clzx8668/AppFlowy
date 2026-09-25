@@ -35,6 +35,20 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
   List<CrmFieldDef> _fieldDefs = const [];
   List<String> _links = const [];
   final Map<String, String> _linkTitles = {};
+
+  /// 全量实体索引（id → 实体）与按类型分组，用于关联展示与选择。
+  Map<String, CrmEntity> _index = const {};
+  Map<String, List<CrmEntity>> _byType = const {};
+
+  /// 多对多关联 id（客户 ↔ 联系人）。
+  List<String> _contactIds = const [];
+  List<String> _customerIds = const [];
+
+  /// 一对多派生列表（客户下的项目/合同/收款；项目下的合同/收款）。
+  List<CrmEntity> _derivedProjects = const [];
+  List<CrmEntity> _derivedContracts = const [];
+  List<CrmEntity> _derivedReceivables = const [];
+
   bool _loading = true;
 
   @override
@@ -54,6 +68,38 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
     final events = await widget.repository.eventsOf(entity.id);
     final defs = await widget.repository.fieldDefs(entity.type);
     final links = await widget.repository.linksOf(entity.id);
+
+    // 关联数据：一次拉全量（个人使用量级很小），再在内存里索引
+    final byType = <String, List<CrmEntity>>{};
+    for (final type in CrmEntityType.all) {
+      byType[type] = await widget.repository.list(type);
+    }
+    final index = <String, CrmEntity>{
+      for (final list in byType.values)
+        for (final item in list) item.id: item,
+    };
+    final contactIds = await widget.repository.relationsOf(
+      fromType: entity.type,
+      fromId: entity.id,
+      toType: CrmEntityType.contact,
+    );
+    final customerIds = await widget.repository.relationsOf(
+      fromType: entity.type,
+      fromId: entity.id,
+      toType: CrmEntityType.customer,
+    );
+    final derivedProjects = (byType[CrmEntityType.project] ?? const [])
+        .where((p) => p.customerId == entity.id)
+        .toList();
+    final derivedContracts = (byType[CrmEntityType.contract] ?? const [])
+        .where((c) => c.customerId == entity.id || c.projectId == entity.id)
+        .toList();
+    final derivedReceivables = (byType[CrmEntityType.receivable] ?? const [])
+        .where(
+          (r) => r.contractId == entity.id || r.projectId == entity.id ||
+              r.customerId == entity.id,
+        )
+        .toList();
     if (!mounted) {
       return;
     }
@@ -62,6 +108,13 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
       _events = events;
       _fieldDefs = defs;
       _links = links;
+      _byType = byType;
+      _index = index;
+      _contactIds = contactIds;
+      _customerIds = customerIds;
+      _derivedProjects = derivedProjects;
+      _derivedContracts = derivedContracts;
+      _derivedReceivables = derivedReceivables;
       _loading = false;
     });
   }
@@ -474,16 +527,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                                 apply: (c, v) => c.copyWith(subtitle: v),
                               ),
                       ),
-                      _fieldRow(
-                        theme,
-                        '负责人',
-                        entity.owner,
-                        () => _editText(
-                                label: '负责人',
-                                current: entity.owner,
-                                apply: (c, v) => c.copyWith(owner: v),
-                              ),
-                      ),
+                      // 负责人：个人使用场景默认隐藏（数据库列保留，便于将来多人协作）
                       _fieldRow(
                         theme,
                         '电话',
@@ -577,6 +621,8 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 12),
+                _relationsCard(theme, entity),
                 const SizedBox(height: 12),
                 MobCard(
                   child: Column(
@@ -747,6 +793,380 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
           style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
         ),
       ],
+    );
+  }
+
+  // ------------------------------------------------------------ 关联区块
+
+  /// 关联卡片：按实体类型给出该有的关联入口。
+  ///
+  /// - 客户：联系人（**多对多**）+ 项目/合同/收款（一对多，派生展示）
+  /// - 联系人：所属客户（**多对多**）
+  /// - 项目：客户（**一对一**）+ 合同（**一对一**）+ 联系人（多对多）
+  /// - 合同：客户（一对一）+ 项目（一对一，若项目已有其它合同会提示）
+  /// - 收款：合同（一对一 → 客户由合同带出）
+  /// - 线索：客户（可选）+ 联系人（多对多）
+  Widget _relationsCard(ThemeData theme, CrmEntity entity) {
+    final rows = <Widget>[];
+
+    void addRelationSection({
+      required String title,
+      required List<CrmEntity> items,
+      String? addLabel,
+      Future<void> Function()? onAdd,
+      Future<void> Function(CrmEntity item)? onRemove,
+    }) {
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    '$title ${items.isEmpty ? '' : '(${items.length})'}',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (onAdd != null)
+                    TextButton.icon(
+                      onPressed: () => unawaited(onAdd()),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: Text(addLabel ?? '添加'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                ],
+              ),
+              if (items.isEmpty)
+                Text(
+                  '未关联',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                )
+              else
+                for (final item in items)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.link, size: 16),
+                    title: Text(item.title.isEmpty ? '未命名' : item.title),
+                    subtitle: item.stage.isEmpty
+                        ? null
+                        : Text(
+                            item.stage,
+                            style: theme.textTheme.labelSmall,
+                          ),
+                    onTap: () => unawaited(
+                      openCrmEntity(context, item, widget.repository),
+                    ),
+                    trailing: onRemove == null
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close, size: 16),
+                            onPressed: () => unawaited(onRemove(item)),
+                          ),
+                  ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    switch (entity.type) {
+      case CrmEntityType.customer:
+      case CrmEntityType.lead:
+        addRelationSection(
+          title: '联系人',
+          items: _contactIds
+              .map((id) => _index[id])
+              .whereType<CrmEntity>()
+              .toList(),
+          addLabel: '添加联系人',
+          onAdd: () => _addRelation(entity, CrmEntityType.contact),
+          onRemove: (item) => _removeRelation(
+            entity,
+            CrmEntityType.contact,
+            item,
+          ),
+        );
+        if (entity.type == CrmEntityType.lead) {
+          final customer =
+              entity.customerId.isEmpty ? null : _index[entity.customerId];
+          addRelationSection(
+            title: '客户',
+            items: customer == null ? const [] : [customer],
+            addLabel: '选择客户',
+            onAdd: () => _pickForeignKey(
+              entity,
+              CrmEntityType.customer,
+              (picked) => entity.copyWith(customerId: picked.id),
+            ),
+            onRemove: (_) async =>
+                _save(entity.copyWith(customerId: '')),
+          );
+        }
+        break;
+      case CrmEntityType.contact:
+        addRelationSection(
+          title: '所属客户',
+          items: _customerIds
+              .map((id) => _index[id])
+              .whereType<CrmEntity>()
+              .toList(),
+          addLabel: '添加客户',
+          onAdd: () => _addRelation(entity, CrmEntityType.customer),
+          onRemove: (item) => _removeRelation(
+            entity,
+            CrmEntityType.customer,
+            item,
+          ),
+        );
+        break;
+      case CrmEntityType.project:
+        final customer =
+            entity.customerId.isEmpty ? null : _index[entity.customerId];
+        addRelationSection(
+          title: '客户（一对一）',
+          items: customer == null ? const [] : [customer],
+          addLabel: '选择客户',
+          onAdd: () => _pickForeignKey(
+            entity,
+            CrmEntityType.customer,
+            (picked) => entity.copyWith(customerId: picked.id),
+          ),
+          onRemove: (_) async => _save(entity.copyWith(customerId: '')),
+        );
+        addRelationSection(
+          title: '合同（一对一）',
+          items: _derivedContracts,
+          addLabel: '选择合同',
+          onAdd: () => _pickForeignKey(
+            entity,
+            CrmEntityType.contract,
+            (picked) async {
+              // 一对一：合同已有其它项目时提示
+              if (picked.projectId.isNotEmpty &&
+                  picked.projectId != entity.id) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('该合同已关联其它项目')),
+                  );
+                }
+                return entity;
+              }
+              await widget.repository.upsert(
+                picked.copyWith(
+                  projectId: entity.id,
+                  customerId: entity.customerId,
+                  updatedAt: DateTime.now(),
+                ),
+              );
+              return null;
+            },
+          ),
+        );
+        addRelationSection(
+          title: '联系人',
+          items: _contactIds
+              .map((id) => _index[id])
+              .whereType<CrmEntity>()
+              .toList(),
+          addLabel: '添加联系人',
+          onAdd: () => _addRelation(entity, CrmEntityType.contact),
+          onRemove: (item) => _removeRelation(
+            entity,
+            CrmEntityType.contact,
+            item,
+          ),
+        );
+        break;
+      case CrmEntityType.contract:
+        final project =
+            entity.projectId.isEmpty ? null : _index[entity.projectId];
+        final customer =
+            entity.customerId.isEmpty ? null : _index[entity.customerId];
+        addRelationSection(
+          title: '项目（一对一）',
+          items: project == null ? const [] : [project],
+          addLabel: '选择项目',
+          onAdd: () => _pickForeignKey(
+            entity,
+            CrmEntityType.project,
+            (picked) async {
+              final existing = (await widget.repository.listByColumn(
+                type: CrmEntityType.contract,
+                column: 'project_id',
+                value: picked.id,
+              ))
+                  .where((c) => c.id != entity.id)
+                  .toList();
+              if (existing.isNotEmpty) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('该项目已关联其它合同')),
+                  );
+                }
+                return entity;
+              }
+              return entity.copyWith(
+                projectId: picked.id,
+                customerId: picked.customerId.isEmpty
+                    ? entity.customerId
+                    : picked.customerId,
+              );
+            },
+          ),
+          onRemove: (_) async => _save(entity.copyWith(projectId: '')),
+        );
+        addRelationSection(
+          title: '客户',
+          items: customer == null ? const [] : [customer],
+          addLabel: '选择客户',
+          onAdd: () => _pickForeignKey(
+            entity,
+            CrmEntityType.customer,
+            (picked) => entity.copyWith(customerId: picked.id),
+          ),
+          onRemove: (_) async => _save(entity.copyWith(customerId: '')),
+        );
+        break;
+      case CrmEntityType.receivable:
+        final contract =
+            entity.contractId.isEmpty ? null : _index[entity.contractId];
+        addRelationSection(
+          title: '合同',
+          items: contract == null ? const [] : [contract],
+          addLabel: '选择合同',
+          onAdd: () => _pickForeignKey(
+            entity,
+            CrmEntityType.contract,
+            (picked) => entity.copyWith(
+              contractId: picked.id,
+              projectId: picked.projectId,
+              customerId: picked.customerId,
+            ),
+          ),
+          onRemove: (_) async => _save(entity.copyWith(contractId: '')),
+        );
+        break;
+    }
+
+    // 一对多派生列表（客户 → 项目 / 合同 / 收款）
+    if (entity.type == CrmEntityType.customer) {
+      addRelationSection(title: '项目（多期）', items: _derivedProjects);
+      addRelationSection(title: '合同', items: _derivedContracts);
+      addRelationSection(title: '收款', items: _derivedReceivables);
+    } else if (entity.type == CrmEntityType.project) {
+      addRelationSection(title: '收款', items: _derivedReceivables);
+    } else if (entity.type == CrmEntityType.contract) {
+      addRelationSection(title: '收款', items: _derivedReceivables);
+    }
+
+    return MobCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '关联',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          ...rows,
+        ],
+      ),
+    );
+  }
+
+  /// 多对多：加一条关联（客户 ↔ 联系人）。
+  Future<void> _addRelation(CrmEntity entity, String toType) async {
+    final picked = await _pickEntity(toType);
+    if (picked == null) {
+      return;
+    }
+    await widget.repository.linkEntities(
+      fromType: entity.type,
+      fromId: entity.id,
+      toType: toType,
+      toId: picked.id,
+    );
+    await _reload();
+  }
+
+  Future<void> _removeRelation(
+    CrmEntity entity,
+    String toType,
+    CrmEntity item,
+  ) async {
+    await widget.repository.unlinkEntities(
+      fromType: entity.type,
+      fromId: entity.id,
+      toType: toType,
+      toId: item.id,
+    );
+    await _reload();
+  }
+
+  /// 单向外键：选择某个实体后套用返回的更新（返回 null 表示不修改）。
+  Future<void> _pickForeignKey(
+    CrmEntity entity,
+    String toType,
+    // 允许同步返回（如直接给客户外键）或异步返回（需要先查重的场景）
+    FutureOr<CrmEntity?> Function(CrmEntity picked) apply,
+  ) async {
+    final picked = await _pickEntity(toType);
+    if (picked == null) {
+      return;
+    }
+    final updated = await apply(picked);
+    if (updated != null) {
+      await _save(updated);
+    } else {
+      await _reload();
+    }
+  }
+
+  /// 选择某个类型的实体（底部弹层）。
+  Future<CrmEntity?> _pickEntity(String type) async {
+    final items = _byType[type] ?? const <CrmEntity>[];
+    if (items.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('还没有${CrmEntityType.label(type)}，先去创建')),
+        );
+      }
+      return null;
+    }
+    return showModalBottomSheet<CrmEntity>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.6,
+          child: ListView(
+            children: [
+              for (final item in items)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.business_outlined),
+                  title: Text(item.title.isEmpty ? '未命名' : item.title),
+                  subtitle: item.subtitle.isEmpty
+                      ? null
+                      : Text(item.subtitle),
+                  onTap: () => Navigator.of(sheetContext).pop(item),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -971,4 +1391,20 @@ class _CrmFieldDefsPageState extends State<CrmFieldDefsPage> {
 String _formatDate(DateTime time) {
   String two(int v) => v.toString().padLeft(2, '0');
   return '${time.year}-${two(time.month)}-${two(time.day)}';
+}
+
+/// 打开任意 CRM 实体详情（关联列表里点击跳转用）。
+Future<void> openCrmEntity(
+  BuildContext context,
+  CrmEntity entity,
+  CrmEntityRepository repository,
+) async {
+  await Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => CrmEntityDetailPage(
+        entityId: entity.id,
+        repository: repository,
+      ),
+    ),
+  );
 }

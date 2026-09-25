@@ -456,11 +456,7 @@ Future<CrmEntity?> showCrmEntitySheet({
                   decoration: const InputDecoration(labelText: '金额（元）'),
                 ),
               ],
-              const SizedBox(height: 10),
-              TextField(
-                controller: ownerController,
-                decoration: const InputDecoration(labelText: '负责人'),
-              ),
+              // 负责人字段：个人使用场景默认隐藏（数据库列保留，便于以后多用户启用）
               if (stages.isNotEmpty) ...[
                 const SizedBox(height: 14),
                 Text(

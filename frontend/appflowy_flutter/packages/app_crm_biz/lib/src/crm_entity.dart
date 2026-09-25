@@ -78,6 +78,7 @@ class CrmEntity {
     this.contactId = '',
     this.projectId = '',
     this.leadId = '',
+    this.contractId = '',
     this.extra = const {},
     required this.createdAt,
     required this.updatedAt,
@@ -111,6 +112,9 @@ class CrmEntity {
   final String projectId;
   final String leadId;
 
+  /// 收款单指向的合同（合同→项目→客户 由此串起来）。
+  final String contractId;
+
   /// 自定义扩展字段（存放在 `crm_field_defs` 里定义的 key）。
   final Map<String, String> extra;
 
@@ -130,6 +134,7 @@ class CrmEntity {
     String? contactId,
     String? projectId,
     String? leadId,
+    String? contractId,
     Map<String, String>? extra,
     DateTime? updatedAt,
   }) {
@@ -148,6 +153,7 @@ class CrmEntity {
       contactId: contactId ?? this.contactId,
       projectId: projectId ?? this.projectId,
       leadId: leadId ?? this.leadId,
+      contractId: contractId ?? this.contractId,
       extra: extra ?? this.extra,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
