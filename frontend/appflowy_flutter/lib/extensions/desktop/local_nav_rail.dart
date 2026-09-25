@@ -149,8 +149,22 @@ List<LocalNavItem> localNavItems({
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1100, maxHeight: 900),
-          child: Navigator(
-            onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => page),
+          child: Stack(
+            children: [
+              Navigator(
+                onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => page),
+              ),
+              // 明确的返回入口（点遮罩或 Esc 也能关，但给个看得见的 ✕ 更稳）
+              Positioned(
+                right: 4,
+                top: 4,
+                child: IconButton(
+                  tooltip: '关闭（返回工作区）',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
+              ),
+            ],
           ),
         ),
       ),
