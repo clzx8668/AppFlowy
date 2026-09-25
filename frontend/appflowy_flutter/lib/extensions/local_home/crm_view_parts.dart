@@ -84,6 +84,145 @@ String formatCrmRelativeDay(DateTime day, {DateTime? now}) {
   return formatCrmDate(target);
 }
 
+/// 时间轴的「天」标题：今天 / 昨天 / 3月12日（跨年补年份）。
+String formatCrmDayLabel(DateTime day, {DateTime? now}) {
+  final today = dateOnly(now ?? DateTime.now());
+  final target = dateOnly(day);
+  final days = today.difference(target).inDays;
+  if (days <= 0) {
+    return '今天';
+  }
+  if (days == 1) {
+    return '昨天';
+  }
+  if (target.year == today.year) {
+    return '${target.month}月${target.day}日';
+  }
+  return '${target.year}年${target.month}月${target.day}日';
+}
+
+/// 详情页的**可折叠节**：标题 + 计数 + 箭头，点标题行展开/收起。
+///
+/// 设计定稿第 3 节：客户 Hub 用六个这样的节（项目/合同/收款/联系人/跟踪记录/AI 记忆），
+/// **跟踪记录默认展开**，其余收起并显示计数。
+class CrmHubSection extends StatefulWidget {
+  const CrmHubSection({
+    super.key,
+    required this.title,
+    required this.child,
+    this.icon,
+    this.count,
+    this.countLabel,
+    this.trailing,
+    this.initiallyExpanded = false,
+    this.emptyHint,
+  });
+
+  final String title;
+  final Widget child;
+  final IconData? icon;
+
+  /// 计数（显示成小徽标）；为空则不显示。
+  final int? count;
+
+  /// 计数徽标里的文字（例如单值关联直接显示名字、AI 记忆显示"已生成"）；为空则显示 [count]。
+  final String? countLabel;
+
+  /// 计数为 0 时展示的浅色提示（例如"还没有关联"）。
+  final String? emptyHint;
+
+  /// 标题行右侧的操作（如「＋ 添加」）。
+  final Widget? trailing;
+  final bool initiallyExpanded;
+
+  @override
+  State<CrmHubSection> createState() => _CrmHubSectionState();
+}
+
+class _CrmHubSectionState extends State<CrmHubSection> {
+  late bool _expanded = widget.initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final count = widget.count;
+    final isEmpty = count == 0;
+    return MobCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(Mob.radiusSmall),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  if (widget.icon != null) ...[
+                    Icon(widget.icon, size: 16, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(
+                    widget.title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (count != null && count > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        widget.countLabel ?? '$count',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  if (widget.trailing != null) widget.trailing!,
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: scheme.outline,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 150),
+            crossFadeState: _expanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: isEmpty && widget.emptyHint != null
+                  ? Text(
+                      widget.emptyHint!,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.outline,
+                      ),
+                    )
+                  : widget.child,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 金额紧凑显示：`1,234` / `1.2万` / `128万`（列表里不用撑爆一行）。
 String formatCrmMoney(double value) {
   if (value >= 10000) {

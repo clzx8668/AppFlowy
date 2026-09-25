@@ -6,6 +6,8 @@ import 'package:appflowy/extensions/ai_entry.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/local_home/crm_field_inputs.dart';
+import 'package:appflowy/extensions/local_home/crm_timeline.dart';
+import 'package:appflowy/extensions/local_home/crm_view_parts.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -52,6 +54,9 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
   List<CrmEntity> _derivedContracts = const [];
   List<CrmEntity> _derivedReceivables = const [];
 
+  /// 跨实体派生信息（未收金额 / 逾期 / 久未跟进），头卡与「今日提醒」用。
+  CrmInsights? _insights;
+
   /// 该实体的 AI 记忆（摘要 + 标签），存在统一记忆库 `ai_digests`，来源 id = `crm:<id>`。
   AiDigest? _digest;
   bool _digesting = false;
@@ -85,6 +90,11 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
       for (final list in byType.values)
         for (final item in list) item.id: item,
     };
+    // 头卡的"未收金额 / 今日提醒"需要每类实体的最近互动，一次查全（个人量级很小）。
+    final latestEvents = <String, CrmEvent>{};
+    for (final type in CrmEntityType.all) {
+      latestEvents.addAll(await widget.repository.latestEventsOf(type));
+    }
     final contactIds = await widget.repository.relationsOf(
       fromType: entity.type,
       fromId: entity.id,
@@ -125,6 +135,10 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
       _derivedProjects = derivedProjects;
       _derivedContracts = derivedContracts;
       _derivedReceivables = derivedReceivables;
+      _insights = CrmInsights(
+        entities: byType.values.expand((list) => list).toList(),
+        latestEvents: latestEvents,
+      );
       _digest = digest;
       _loading = false;
     });
@@ -576,6 +590,9 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // 客户 Hub 头卡：名称 / 等级 / 未收金额 / 今日提醒（设计定稿第 3 节）
+                      _hubHeader(theme, entity),
+                      const Divider(height: 22),
                       _fieldRow(
                         theme,
                         '标题',
@@ -586,9 +603,6 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                           apply: (c, v) => c.copyWith(title: v),
                         ),
                       ),
-                      // ⭐「今天要跟进」：写实体的扩展字段 `extra.follow_up_at`
-                      //（现成机制，不改数据库结构），首页那条横条据此排最前。
-                      _followUpToggle(theme, entity),
                       _fieldRow(
                         theme,
                         '摘要',
@@ -684,9 +698,56 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                   ),
                 ],
                 const SizedBox(height: 12),
-                _aiMemoryCard(theme),
+                // 六节折叠（设计定稿第 3 节）：项目 / 合同 / 收款 / 联系人…
+                for (final section in _relationSections(theme, entity)) ...[
+                  section,
+                  const SizedBox(height: 12),
+                ],
+                // 跟踪记录：**默认展开**，按天分组的时间轴 + 类型筛选
+                CrmHubSection(
+                  title: '跟踪记录',
+                  icon: Icons.timeline,
+                  count: _events.length,
+                  initiallyExpanded: true,
+                  emptyHint: '还没有跟踪记录',
+                  trailing: TextButton.icon(
+                    onPressed: () => unawaited(_addEvent()),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('记录跟进'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  child: CrmEventTimeline(
+                    events: _events,
+                    onDelete: (event) async {
+                      await widget.repository.deleteEvent(event.id);
+                      await _reload();
+                    },
+                    onOpenLinkedView: (viewId) =>
+                        unawaited(openDocumentByViewId(context, viewId)),
+                  ),
+                ),
                 const SizedBox(height: 12),
-                _relationsCard(theme, entity),
+                CrmHubSection(
+                  title: 'AI 记忆',
+                  icon: Icons.auto_awesome,
+                  count: _digest == null ? 0 : 1,
+                  countLabel: _digest == null ? null : '已生成',
+                  emptyHint: '还没有生成摘要',
+                  trailing: TextButton.icon(
+                    onPressed:
+                        _digesting ? null : () => unawaited(_generateDigest()),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: Text(
+                      _digesting ? '生成中…' : (_digest == null ? '生成摘要' : '更新摘要'),
+                    ),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  child: _aiMemoryBody(theme),
+                ),
                 const SizedBox(height: 12),
                 MobCard(
                   child: Column(
@@ -749,81 +810,6 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                MobCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _sectionHeader(theme, '跟踪记录', '记录跟进', _addEvent),
-                      if (_events.isEmpty)
-                        Text(
-                          '还没有跟踪记录',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.outline,
-                          ),
-                        )
-                      else
-                        for (final event in _events)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  _eventIcon(event.kind),
-                                  size: 15,
-                                  color: theme.colorScheme.primary,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${_formatDate(event.eventTime)} · ${event.kind}',
-                                        style: theme.textTheme.labelSmall
-                                            ?.copyWith(
-                                          color: theme.colorScheme.outline,
-                                        ),
-                                      ),
-                                      Text(
-                                        event.content,
-                                        style: theme.textTheme.bodyMedium,
-                                      ),
-                                      if (event.linkedViewId.isNotEmpty)
-                                        InkWell(
-                                          onTap: () => unawaited(
-                                            openDocumentByViewId(
-                                              context,
-                                              event.linkedViewId,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            '查看记录 ›',
-                                            style: theme.textTheme.labelSmall
-                                                ?.copyWith(
-                                              color: theme.colorScheme.primary,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(Icons.close, size: 15),
-                                  onPressed: () async {
-                                    await widget.repository
-                                        .deleteEvent(event.id);
-                                    await _reload();
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                    ],
-                  ),
-                ),
               ],
             ),
     );
@@ -870,6 +856,159 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
         ),
       ),
     );
+  }
+
+  /// 客户 Hub 头卡（设计定稿第 3 节）：名称 + 等级徽标 + 未收金额 + **今日提醒** + ⭐ 开关。
+  Widget _hubHeader(ThemeData theme, CrmEntity entity) {
+    final scheme = theme.colorScheme;
+    final insights = _insights;
+    final level = entity.levelLetter;
+    final unpaid = entity.type == CrmEntityType.customer
+        ? insights?.unpaidOf(entity.id) ?? 0
+        : 0.0;
+    final reminder = insights == null ? null : _todayReminder(insights, entity);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                entity.title.isEmpty
+                    ? '${CrmEntityType.label(entity.type)}（未命名）'
+                    : entity.title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (level.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              CrmLevelBadge(letter: level),
+            ],
+          ],
+        ),
+        if (entity.subtitle.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            entity.subtitle,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Text(
+              CrmEntityType.label(entity.type),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.outline,
+              ),
+            ),
+            if (entity.stage.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                entity.stage,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            if (entity.amount > 0) ...[
+              const SizedBox(width: 8),
+              Text(
+                '¥${formatCrmMoney(entity.amount)}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            const Spacer(),
+            if (unpaid > 0)
+              Text(
+                '未收 ¥${formatCrmMoney(unpaid)}',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: scheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+          ],
+        ),
+        if (reminder != null) ...[
+          const SizedBox(height: 8),
+          // 浅色提示条：逾期用柔和的错误色，手动 ⭐ 用中性色（不喧宾夺主）
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: reminder.urgent
+                  ? scheme.error.withValues(alpha: 0.08)
+                  : scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(Mob.radiusSmall),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  reminder.urgent
+                      ? Icons.notifications_active_outlined
+                      : Icons.star_outline,
+                  size: 14,
+                  color:
+                      reminder.urgent ? scheme.error : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '今日提醒：${reminder.text}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: reminder.urgent
+                          ? scheme.error
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        // ⭐「今天要跟进」：写实体的扩展字段 `extra.follow_up_at`
+        //（现成机制，不改数据库结构），首页那条横条据此排最前。
+        _followUpToggle(theme, entity),
+      ],
+    );
+  }
+
+  /// 今日提醒一句话（和首页横条同一套判定口径）。
+  /// `urgent` 只决定配色（逾期＝错误色，标记/久未跟进＝中性色）。
+  ({String text, bool urgent})? _todayReminder(
+    CrmInsights insights,
+    CrmEntity entity,
+  ) {
+    if (insights.manualFollowUpAt(entity) != null) {
+      return (text: '已标记今天要跟进', urgent: false);
+    }
+    final overdue = insights.overdueDaysOf(entity);
+    if (overdue != null) {
+      return (
+        text: overdue == 0 ? '关键日期今天到期' : '关键日期已逾期 $overdue 天',
+        urgent: true,
+      );
+    }
+    if (insights.isStale(entity)) {
+      return (
+        text: '${insights.daysSinceInteraction(entity)} 天没联系了',
+        urgent: false,
+      );
+    }
+    if (insights.isSnoozed(entity)) {
+      return (
+        text: '已推迟到 ${entity.extra[CrmInsights.snoozeKey]}',
+        urgent: false,
+      );
+    }
+    return null;
   }
 
   /// 写入 / 清除 ⭐ 标记。打开时顺手清掉"推迟"，让提醒立刻生效。
@@ -927,73 +1066,49 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
       def.label.isEmpty ? def.key : def.label;
 
   /// AI 记忆卡片：本地摘要器对"字段 + 跟踪记录"生成摘要与标签，存进统一记忆库。
-  Widget _aiMemoryCard(ThemeData theme) {
+  /// AI 记忆的**内容**（外层的可折叠节由 [CrmHubSection] 提供）。
+  Widget _aiMemoryBody(ThemeData theme) {
     final digest = _digest;
-    return MobCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.auto_awesome, size: 16),
-              const SizedBox(width: 6),
-              Text(
-                'AI 记忆',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed:
-                    _digesting ? null : () => unawaited(_generateDigest()),
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text(
-                  _digesting ? '生成中…' : (digest == null ? '生成摘要' : '更新摘要'),
-                ),
-                style:
-                    TextButton.styleFrom(visualDensity: VisualDensity.compact),
-              ),
-            ],
-          ),
-          if (digest == null)
-            Text(
-              '还没有这条记录的记忆 —— 生成后会进入「AI 记忆」库，可被检索复用',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            )
-          else ...[
-            Text(digest.summary, style: theme.textTheme.bodyMedium),
-            if (digest.tags.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final tag in digest.tags)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '#$tag',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer,
-                        ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (digest == null)
+          Text(
+            '还没有这条记录的记忆 —— 生成后会进入「AI 记忆」库，可被检索复用',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
+          )
+        else ...[
+          Text(digest.summary, style: theme.textTheme.bodyMedium),
+          if (digest.tags.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final tag in digest.tags)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '#$tag',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onPrimaryContainer,
                       ),
                     ),
-                ],
-              ),
-            ],
+                  ),
+              ],
+            ),
           ],
         ],
-      ),
+      ],
     );
   }
 
@@ -1185,8 +1300,12 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
   /// - 合同：客户（一对一）+ 项目（一对一，若项目已有其它合同会提示）
   /// - 收款：合同（一对一 → 客户由合同带出）
   /// - 线索：客户（可选）+ 联系人（多对多）
-  Widget _relationsCard(ThemeData theme, CrmEntity entity) {
-    final rows = <Widget>[];
+  /// 关联节：设计定稿第 3 节要求 Hub 用**可折叠节**承载关联 —— 这里按关联名分组，
+  /// 每组产出一个 [CrmHubSection]（收起时靠计数就知道有没有关联）。
+  List<Widget> _relationSections(ThemeData theme, CrmEntity entity) {
+    final groups = <String, (int, List<Widget>)>{};
+    List<Widget> rowsOf(String title, int count) =>
+        (groups[title] ??= (count, <Widget>[])).$2;
 
     void addRelationSection({
       required String title,
@@ -1201,7 +1320,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
       // 点行展开才列出明细，点「＋」用下拉列表选择添加（不把全部条目直接铺开）。
       if (single) {
         final item = items.isEmpty ? null : items.first;
-        rows.add(
+        rowsOf(title, items.length).add(
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
@@ -1256,7 +1375,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
         return;
       }
 
-      rows.add(
+      rowsOf(title, items.length).add(
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Column(
@@ -1516,21 +1635,18 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
       addRelationSection(title: '收款', items: _derivedReceivables);
     }
 
-    return MobCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '关联',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+    return [
+      for (final entry in groups.entries)
+        CrmHubSection(
+          title: entry.key,
+          count: entry.value.$1,
+          emptyHint: '未关联',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: entry.value.$2,
           ),
-          const SizedBox(height: 4),
-          ...rows,
-        ],
-      ),
-    );
+        ),
+    ];
   }
 
   /// 多对多：加一条关联（客户 ↔ 联系人）。
@@ -1658,25 +1774,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
     );
   }
 
-  IconData _eventIcon(String kind) {
-    switch (kind) {
-      case '电话':
-        return Icons.call_outlined;
-      case '拜访':
-        return Icons.directions_walk;
-      case '会议':
-        return Icons.groups_outlined;
-      case '微信':
-        return Icons.chat_bubble_outline;
-      case '邮件':
-        return Icons.mail_outline;
-      case '阶段':
-      case '转项目':
-        return Icons.trending_up;
-      default:
-        return Icons.sticky_note_2_outlined;
-    }
-  }
+  // 事件图标已由 CrmEventTimeline 内的类型徽标负责，这里不再重复维护。
 }
 
 /// 自定义字段定义管理：为某类实体增删字段（值存在实体 `extra`，不改表结构）。
