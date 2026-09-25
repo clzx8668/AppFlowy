@@ -1,11 +1,12 @@
 import 'dart:async';
 
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
+import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/local_home/local_home_shell.dart';
+import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -20,11 +21,7 @@ final GlobalKey<NavigatorState> localContentViewKey =
 
 /// 在内容区打开一个本地模块页（拿不到 Navigator 时退化为普通路由）。
 void openLocalModulePage(BuildContext context, Widget page) {
-  final navigator = localContentViewKey.currentState;
-  if (navigator != null) {
-    navigator.push(MaterialPageRoute(builder: (_) => page));
-    return;
-  }
+  // 沿用上游原有模式：普通路由打开（内部页渲染方式不变）
   Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 }
 
@@ -194,13 +191,15 @@ List<LocalNavItem> localNavItems({
       open: (context) => push(context, const AiMemoryView()),
     ),
     LocalNavItem(
-      // 与展开态侧栏「本地模块」里的图标同源，不另起一套
+      icon: FlowySvgs.link_to_page_s,
+      label: '知识库双链',
+      open: (context) => push(context, const KbLinksSettingsPage()),
+    ),
+    LocalNavItem(
       icon: FlowySvgs.settings_sync_m,
-      label: '设置',
-      open: (context) => showSettingsDialog(
-        context,
-        userWorkspaceBloc: context.read<UserWorkspaceBloc>(),
-      ),
+      label: '快照同步',
+      open: (context) =>
+          push(context, WebDavSettingsPage(workspaceId: workspaceId)),
     ),
   ];
 }

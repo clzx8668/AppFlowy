@@ -280,11 +280,7 @@ class DesktopHomeScreen extends StatelessWidget {
     final isSliderbarShowing = layout.showMenu;
     return Stack(
       children: [
-        Navigator(
-          // 二次开发：内容区自带一层 Navigator，本地模块页在'主框架内'渲染
-          key: localContentViewKey,
-          onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => homeStack),
-        )
+        homeStack
             .constrained(minWidth: 500)
             .positioned(
               left: layout.homePageLOffset + localRailWidth,
