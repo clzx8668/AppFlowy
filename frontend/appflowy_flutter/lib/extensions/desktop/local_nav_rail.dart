@@ -13,6 +13,8 @@ import 'package:appflowy/workspace/application/workspace/workspace_service.dart'
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
@@ -94,6 +96,8 @@ class LocalNavRail extends StatelessWidget {
             child: SingleChildScrollView(
               child: Column(
                 children: [
+                  // 固定项（与展开态侧栏顶部一一对应）：我 / 设置 / 通知
+                  _RailHeaderItems(),
                   for (final item in items)
                     _RailIcon(
                       icon: item.icon,
@@ -373,6 +377,77 @@ class _RailViewIcon extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
             onTap: () => unawaited(openViewInContent(context, view)),
+            child: SizedBox(width: 40, height: 40, child: Center(child: child)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 展开态侧栏**顶部那一行**的图标版：我（头像）/ 设置 / 通知。
+class _RailHeaderItems extends StatelessWidget {
+  const _RailHeaderItems();
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = context.read<UserWorkspaceBloc>().state.userProfile;
+    final initial = profile.name.isEmpty ? 'A' : profile.name.characters.first;
+    return Column(
+      children: [
+        _RailChildIcon(
+          tooltip: profile.name.isEmpty ? '本地用户' : profile.name,
+          onTap: () => showSettingsDialog(
+            context,
+            userWorkspaceBloc: context.read<UserWorkspaceBloc>(),
+          ),
+          child: CircleAvatar(radius: 13, child: Text(initial)),
+        ),
+        _RailChildIcon(
+          tooltip: '设置',
+          onTap: () => showSettingsDialog(
+            context,
+            userWorkspaceBloc: context.read<UserWorkspaceBloc>(),
+          ),
+          child: const Icon(Icons.settings_outlined, size: 20),
+        ),
+        _RailChildIcon(
+          tooltip: '通知',
+          onTap: () => context.read<HomeSettingBloc>().add(
+                const HomeSettingEvent.collapseNotificationPanel(),
+              ),
+          child: const Icon(Icons.notifications_none, size: 20),
+        ),
+      ],
+    );
+  }
+}
+
+/// 任意子节点的窄条图标（头像、Material 图标都能用）。
+class _RailChildIcon extends StatelessWidget {
+  const _RailChildIcon({
+    required this.child,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final Widget child;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 300),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
             child: SizedBox(width: 40, height: 40, child: Center(child: child)),
           ),
         ),
