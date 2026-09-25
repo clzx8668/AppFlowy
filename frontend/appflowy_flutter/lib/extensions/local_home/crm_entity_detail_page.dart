@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:app_crm_biz/app_crm_biz.dart';
+import 'package:app_ai_ext/app_ai_ext.dart';
+import 'package:appflowy/extensions/ai_entry.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
@@ -44,10 +46,17 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
   List<String> _contactIds = const [];
   List<String> _customerIds = const [];
 
+  /// 「对多」关联的展开状态：默认折叠，只显示「名称 + 数量 + ＋」，点开才列出来。
+  final Set<String> _expandedSections = {};
+
   /// 一对多派生列表（客户下的项目/合同/收款；项目下的合同/收款）。
   List<CrmEntity> _derivedProjects = const [];
   List<CrmEntity> _derivedContracts = const [];
   List<CrmEntity> _derivedReceivables = const [];
+
+  /// 该实体的 AI 记忆（摘要 + 标签），存在统一记忆库 `ai_digests`，来源 id = `crm:<id>`。
+  AiDigest? _digest;
+  bool _digesting = false;
 
   bool _loading = true;
 
@@ -100,6 +109,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
               r.customerId == entity.id,
         )
         .toList();
+    final digest = await _loadDigest(entity.id);
     if (!mounted) {
       return;
     }
@@ -115,8 +125,67 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
       _derivedProjects = derivedProjects;
       _derivedContracts = derivedContracts;
       _derivedReceivables = derivedReceivables;
+      _digest = digest;
       _loading = false;
     });
+  }
+
+  String get _digestSourceId => 'crm:${widget.entityId}';
+
+  Future<AiDigest?> _loadDigest(String entityId) async {
+    try {
+      final service = await createAiService();
+      return service.memoryOf('crm:$entityId');
+    } catch (e) {
+      Log.error('[CRM] 读取 AI 记忆失败：$e');
+      return null;
+    }
+  }
+
+  /// 生成/更新该实体的 AI 记忆：把核心字段 + 跟踪记录拼成文本，交给本地摘要器。
+  Future<void> _generateDigest() async {
+    final entity = _entity;
+    if (entity == null || _digesting) {
+      return;
+    }
+    setState(() => _digesting = true);
+    try {
+      final buffer = StringBuffer()
+        ..writeln('${CrmEntityType.label(entity.type)}：${entity.title}')
+        ..writeln('摘要：${entity.subtitle}')
+        ..writeln('阶段：${entity.stage}')
+        ..writeln('金额：${entity.amount}')
+        ..writeln('备注：${entity.note}');
+      for (final def in _fieldDefs) {
+        final value = entity.extra[def.key];
+        if (value != null && value.isNotEmpty) {
+          buffer.writeln('${def.label.isEmpty ? def.key : def.label}：$value');
+        }
+      }
+      for (final event in _events) {
+        buffer.writeln('${event.kind}：${event.content}');
+      }
+      final service = await createAiService();
+      final digest = await service.digestTextWithSource(
+        sourceId: _digestSourceId,
+        title: entity.title,
+        text: buffer.toString(),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _digest = digest);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _digesting = false);
+      }
+    }
   }
 
   Future<void> _save(CrmEntity updated) async {
@@ -612,6 +681,8 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                   ),
                 ],
                 const SizedBox(height: 12),
+                _aiMemoryCard(theme),
+                const SizedBox(height: 12),
                 _relationsCard(theme, entity),
                 const SizedBox(height: 12),
                 MobCard(
@@ -785,6 +856,73 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
   String _fieldLabel(CrmFieldDef def) =>
       def.label.isEmpty ? def.key : def.label;
 
+  /// AI 记忆卡片：本地摘要器对"字段 + 跟踪记录"生成摘要与标签，存进统一记忆库。
+  Widget _aiMemoryCard(ThemeData theme) {
+    final digest = _digest;
+    return MobCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                'AI 记忆',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _digesting ? null : () => unawaited(_generateDigest()),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: Text(_digesting ? '生成中…' : (digest == null ? '生成摘要' : '更新摘要')),
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              ),
+            ],
+          ),
+          if (digest == null)
+            Text(
+              '还没有这条记录的记忆 —— 生成后会进入「AI 记忆」库，可被检索复用',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            )
+          else ...[
+            Text(digest.summary, style: theme.textTheme.bodyMedium),
+            if (digest.tags.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final tag in digest.tags)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '#$tag',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
   /// 按字段类型编辑值：文本/数字走输入框，日期走日期选择器，单选走选项 chips。
   Future<void> _editFieldValue(CrmEntity entity, CrmFieldDef def) async {
     final current = entity.extra[def.key] ?? '';
@@ -882,46 +1020,127 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
       String? addLabel,
       Future<void> Function()? onAdd,
       Future<void> Function(CrmEntity item)? onRemove,
+      bool single = false,
     }) {
+      // 「对一」关联：单值行（选择 / 清空）。
+      // 「对多」关联：**折叠展示** —— 只显示「名称 + 数量 + ＋」，
+      // 点行展开才列出明细，点「＋」用下拉列表选择添加（不把全部条目直接铺开）。
+      if (single) {
+        final item = items.isEmpty ? null : items.first;
+        rows.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 92,
+                  child: Text(
+                    title,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: item == null
+                      ? Text(
+                          '未关联',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.outlineVariant,
+                          ),
+                        )
+                      : InkWell(
+                          onTap: () => unawaited(
+                            openCrmEntity(context, item, widget.repository),
+                          ),
+                          child: Text(
+                            item.title.isEmpty ? '未命名' : item.title,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                ),
+                if (onAdd != null)
+                  IconButton(
+                    tooltip: addLabel ?? '选择',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.add_circle_outline, size: 18),
+                    onPressed: () => unawaited(onAdd()),
+                  ),
+                if (item != null && onRemove != null)
+                  IconButton(
+                    tooltip: '清空',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close, size: 16),
+                    onPressed: () => unawaited(onRemove(item)),
+                  ),
+              ],
+            ),
+          ),
+        );
+        return;
+      }
+
+      final expanded = _expandedSections.contains(title);
       rows.add(
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Text(
-                    '$title ${items.isEmpty ? '' : '(${items.length})'}',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (onAdd != null)
-                    TextButton.icon(
-                      onPressed: () => unawaited(onAdd()),
-                      icon: const Icon(Icons.add, size: 16),
-                      label: Text(addLabel ?? '添加'),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
+              InkWell(
+                onTap: () => setState(() {
+                  if (expanded) {
+                    _expandedSections.remove(title);
+                  } else {
+                    _expandedSections.add(title);
+                  }
+                }),
+                borderRadius: BorderRadius.circular(Mob.radiusSmall),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 92,
+                      child: Text(
+                        title,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
                       ),
                     ),
-                ],
+                    Expanded(
+                      child: Text(
+                        items.isEmpty ? '未关联' : '${items.length} 项',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: items.isEmpty
+                              ? theme.colorScheme.outlineVariant
+                              : null,
+                        ),
+                      ),
+                    ),
+                    if (items.isNotEmpty)
+                      Icon(
+                        expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 18,
+                        color: theme.colorScheme.outline,
+                      ),
+                    if (onAdd != null)
+                      IconButton(
+                        tooltip: addLabel ?? '添加',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.add_circle_outline, size: 18),
+                        onPressed: () => unawaited(onAdd()),
+                      ),
+                  ],
+                ),
               ),
-              if (items.isEmpty)
-                Text(
-                  '未关联',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.outlineVariant,
-                  ),
-                )
-              else
+              if (expanded)
                 for (final item in items)
                   ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.link, size: 16),
+                    leading: const Icon(Icons.subdirectory_arrow_right, size: 16),
                     title: Text(item.title.isEmpty ? '未命名' : item.title),
                     subtitle: item.stage.isEmpty
                         ? null
@@ -969,6 +1188,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
             title: '客户',
             items: customer == null ? const [] : [customer],
             addLabel: '选择客户',
+            single: true,
             onAdd: () => _pickForeignKey(
               entity,
               CrmEntityType.customer,
@@ -1002,6 +1222,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
           title: '客户（一对一）',
           items: customer == null ? const [] : [customer],
           addLabel: '选择客户',
+          single: true,
           onAdd: () => _pickForeignKey(
             entity,
             CrmEntityType.customer,
@@ -1013,6 +1234,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
           title: '合同（一对一）',
           items: _derivedContracts,
           addLabel: '选择合同',
+          single: true,
           onAdd: () => _pickForeignKey(
             entity,
             CrmEntityType.contract,
@@ -1062,6 +1284,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
           title: '项目（一对一）',
           items: project == null ? const [] : [project],
           addLabel: '选择项目',
+          single: true,
           onAdd: () => _pickForeignKey(
             entity,
             CrmEntityType.project,
@@ -1095,6 +1318,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
           title: '客户',
           items: customer == null ? const [] : [customer],
           addLabel: '选择客户',
+          single: true,
           onAdd: () => _pickForeignKey(
             entity,
             CrmEntityType.customer,
@@ -1110,6 +1334,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
           title: '合同',
           items: contract == null ? const [] : [contract],
           addLabel: '选择合同',
+          single: true,
           onAdd: () => _pickForeignKey(
             entity,
             CrmEntityType.contract,

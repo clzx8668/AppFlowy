@@ -218,6 +218,23 @@ class AiService {
   Future<List<AiDigest>> memories({int limit = 50}) =>
       _repository.recent(limit: limit);
 
+  /// 用**指定的来源 id** 生成摘要（例如 CRM 实体：`crm:<entityId>`），
+  /// 便于把 CRM 客户/项目的"记忆卡片"和内核页面的摘要放在同一个记忆库里。
+  Future<AiDigest> digestTextWithSource({
+    required String sourceId,
+    required String title,
+    required String text,
+  }) async {
+    if (text.trim().isEmpty) {
+      throw Exception('内容为空，暂时无法生成摘要');
+    }
+    return _persist(
+      sourceId: sourceId,
+      title: title,
+      result: await _digester.digest(text, title: title),
+    );
+  }
+
   Future<AiDigest?> memoryOf(String sourceId) => _repository.of(sourceId);
 
   Future<void> forget(String sourceId) => _repository.remove(sourceId);
