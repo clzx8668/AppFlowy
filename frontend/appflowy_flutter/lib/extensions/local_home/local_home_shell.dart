@@ -1759,11 +1759,11 @@ class _ContainerRecordsViewState extends State<_ContainerRecordsView> {
       return;
     }
     // 二次开发：新建记录同时登记到「时间线」数据库（统一时间轴）
+    // 标题留空：新页面此时还没起名，行标题就用事件类型（等页面命名后再补也可以）
     unawaited(
       recordTimelineEvent(
         date: DateTime.now(),
         kind: _timelineKindOfContainer(container.module),
-        title: container.name,
         sourceViewId: view.id,
       ),
     );
