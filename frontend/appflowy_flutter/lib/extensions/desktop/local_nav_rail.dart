@@ -20,6 +20,7 @@ import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart
 import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
+import 'package:appflowy/workspace/presentation/command_palette/command_palette.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
@@ -105,6 +106,8 @@ class LocalNavRail extends StatelessWidget {
                   _RailHeaderItems(),
                   // 与展开态侧栏「新页面」一行对应
                   const _RailNewPageIcon(),
+                  // 与展开态侧栏「搜索」一行对应（同一入口：命令面板）
+                  const _RailSearchIcon(),
                   for (final item in items)
                     _RailIcon(
                       icon: item.icon,
@@ -519,6 +522,23 @@ class _RailNewPageIcon extends StatelessWidget {
       tooltip: '新页面',
       onTap: () => unawaited(_createNewPage(context)),
       child: const Icon(Icons.add, size: 20),
+    );
+  }
+}
+
+/// 「搜索」：与展开态侧栏那行同一个入口（命令面板）。
+class _RailSearchIcon extends StatelessWidget {
+  const _RailSearchIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return _RailChildIcon(
+      tooltip: '搜索',
+      onTap: () => CommandPalette.of(context).toggle(
+        workspaceBloc: context.read<UserWorkspaceBloc>(),
+        spaceBloc: context.read<SpaceBloc>(),
+      ),
+      child: const Icon(Icons.search, size: 20),
     );
   }
 }
