@@ -10,6 +10,24 @@ import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+/// **内容区（侧栏右边那块）的内嵌 Navigator key**。
+///
+/// 桌面端要求在"主框架内渲染内部页"（侧栏、多标签区都不动）：
+/// `DesktopHomeScreen` 把内容区包一层 Navigator，模块页 push 到它上面，
+/// 返回栈只影响内容区 —— 与上游打开文档的行为一致（用户 2026-09-26 要求）。
+final GlobalKey<NavigatorState> localContentViewKey =
+    GlobalKey<NavigatorState>();
+
+/// 在内容区打开一个本地模块页（拿不到 Navigator 时退化为普通路由）。
+void openLocalModulePage(BuildContext context, Widget page) {
+  final navigator = localContentViewKey.currentState;
+  if (navigator != null) {
+    navigator.push(MaterialPageRoute(builder: (_) => page));
+    return;
+  }
+  Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+}
+
 /// **侧边栏的"收起态"本体**：上游收起时整条侧栏完全滑走（宽度归零），
 /// 这里改成**只留下一个图标宽度的窄条**，方便随手点开本地模块。
 ///
@@ -139,36 +157,8 @@ List<LocalNavItem> localNavItems({
   required Int64 userId,
 }) {
   void push(BuildContext context, Widget page) {
-    // PC 端**沿用上游框架**：模块页不作为全屏路由 push（那样会盖住侧栏、也没有返回路径），
-    // 而是像上游"设置"那样开一个**应用内对话框**——侧栏与多标签区仍在，
-    // 右上角 ✕ / Esc 就是返回（见用户 2026-09-26 反馈）。
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        insetPadding: const EdgeInsets.all(24),
-        clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1100, maxHeight: 900),
-          child: Stack(
-            children: [
-              Navigator(
-                onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => page),
-              ),
-              // 明确的返回入口（点遮罩或 Esc 也能关，但给个看得见的 ✕ 更稳）
-              Positioned(
-                right: 4,
-                top: 4,
-                child: IconButton(
-                  tooltip: '关闭（返回工作区）',
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    // 在主框架的内容区里渲染（侧栏不动；内容区自带返回）
+    openLocalModulePage(context, page);
   }
 
   return [

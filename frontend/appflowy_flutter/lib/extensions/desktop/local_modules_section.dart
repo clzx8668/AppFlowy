@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_containers/app_containers.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
+import 'package:appflowy/extensions/desktop/local_nav_rail.dart';
 import 'package:appflowy/extensions/local_home/local_home_shell.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
@@ -95,34 +96,8 @@ class _LocalModulesSectionState extends State<LocalModulesSection> {
             '';
 
     void open(Widget page) {
-      // 同上：桌面端用应用内对话框打开模块页，不覆盖侧栏、随时可关（✕ / Esc）
-      showDialog<void>(
-        context: context,
-        builder: (dialogContext) => Dialog(
-          insetPadding: const EdgeInsets.all(24),
-          clipBehavior: Clip.antiAlias,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1100, maxHeight: 900),
-            child: Stack(
-              children: [
-                Navigator(
-                  onGenerateRoute: (_) =>
-                      MaterialPageRoute(builder: (_) => page),
-                ),
-                Positioned(
-                  right: 4,
-                  top: 4,
-                  child: IconButton(
-                    tooltip: '关闭（返回工作区）',
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+      // 在主框架的内容区里渲染（侧栏不动；内容区自带返回）
+      openLocalModulePage(context, page);
     }
 
     return SizedBox(
