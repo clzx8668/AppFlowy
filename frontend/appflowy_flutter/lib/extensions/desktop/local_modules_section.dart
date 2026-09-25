@@ -4,6 +4,7 @@ import 'package:app_containers/app_containers.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/local_home/local_home_shell.dart';
+import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
@@ -110,6 +111,19 @@ class _LocalModulesSectionState extends State<LocalModulesSection> {
               '本地模块',
               fontSize: 12.0,
               color: theme.hintColor,
+            ),
+          ),
+          _entry(
+            context,
+            icon: FlowySvgs.document_s,
+            label: '记录流（首页）',
+            onTap: () => open(
+              RecordsFeedPage(
+                repository: ContainerRepositoryImpl(
+                  workspaceId: workspaceId,
+                  userId: widget.userProfile.id,
+                ),
+              ),
             ),
           ),
           _entry(

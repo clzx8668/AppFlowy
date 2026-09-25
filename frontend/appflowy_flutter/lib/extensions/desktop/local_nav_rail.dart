@@ -6,6 +6,7 @@ import 'package:appflowy/extensions/local_home/local_home_shell.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -48,13 +49,16 @@ class LocalNavRail extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLow,
       child: Column(
         children: [
-          const SizedBox(height: 8),
-          _RailIcon(
-            icon: Icons.chevron_right,
-            tooltip: '展开侧边栏',
-            onTap: onToggleMenu,
+          // 顶部与展开态的侧栏一致：**App 的 logo**（不再自造展开按钮，
+          // 展开已有上游那个 `»`）。
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 28,
+            child: Center(
+              child: FlowySvg(FlowySvgs.app_logo_xl, size: const Size.square(24)),
+            ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Divider(
             height: 9,
             thickness: 0.5,
@@ -82,13 +86,12 @@ class _RailIcon extends StatelessWidget {
     required this.onTap,
   });
 
-  final IconData icon;
+  final FlowySvgData icon;
   final String tooltip;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Tooltip(
       message: tooltip,
       waitDuration: const Duration(milliseconds: 300),
@@ -103,10 +106,8 @@ class _RailIcon extends StatelessWidget {
             child: SizedBox(
               width: 40,
               height: 40,
-              child: Icon(
-                icon,
-                size: 20,
-                color: scheme.onSurfaceVariant,
+              child: Center(
+                child: FlowySvg(icon, size: const Size.square(20)),
               ),
             ),
           ),
@@ -117,6 +118,9 @@ class _RailIcon extends StatelessWidget {
 }
 
 /// 一条本地导航项：图标 + 名称 + 打开动作。
+///
+/// 图标一律用上游同一套 `FlowySvgs`（与展开态侧栏「本地模块」用的**完全相同的图标**），
+/// 这样收起 / 展开两种形态一一对应（2026-09-26 产品纠正）。
 class LocalNavItem {
   const LocalNavItem({
     required this.icon,
@@ -124,7 +128,7 @@ class LocalNavItem {
     required this.open,
   });
 
-  final IconData icon;
+  final FlowySvgData icon;
   final String label;
   final void Function(BuildContext context) open;
 }
@@ -140,7 +144,7 @@ List<LocalNavItem> localNavItems({
 
   return [
     LocalNavItem(
-      icon: Icons.article_outlined,
+      icon: FlowySvgs.document_s,
       label: '记录流（首页）',
       open: (context) => push(
         context,
@@ -153,7 +157,7 @@ List<LocalNavItem> localNavItems({
       ),
     ),
     LocalNavItem(
-      icon: Icons.calendar_month_outlined,
+      icon: FlowySvgs.calendar_s,
       label: '日历 · 日记',
       open: (context) => push(
         context,
@@ -161,22 +165,22 @@ List<LocalNavItem> localNavItems({
       ),
     ),
     LocalNavItem(
-      icon: Icons.groups_outlined,
+      icon: FlowySvgs.person_s,
       label: 'CRM',
       open: (context) => push(context, const CrmView()),
     ),
     LocalNavItem(
-      icon: Icons.auto_awesome_outlined,
+      icon: FlowySvgs.ai_sparks_s,
       label: 'AI 记忆',
       open: (context) => push(context, const AiMemoryView()),
     ),
     LocalNavItem(
-      icon: Icons.hub_outlined,
+      icon: FlowySvgs.link_to_page_s,
       label: '知识库双链',
       open: (context) => push(context, const KbLinksSettingsPage()),
     ),
     LocalNavItem(
-      icon: Icons.cloud_sync_outlined,
+      icon: FlowySvgs.settings_sync_m,
       label: '快照同步',
       open: (context) =>
           push(context, WebDavSettingsPage(workspaceId: workspaceId)),
@@ -249,7 +253,7 @@ class LocalNavDrawer extends StatelessWidget {
               for (final item in items)
                 ListTile(
                   dense: true,
-                  leading: Icon(item.icon, size: 20),
+                  leading: FlowySvg(item.icon, size: const Size.square(20)),
                   title: Text(item.label),
                   onTap: () {
                     Navigator.of(context).pop();
