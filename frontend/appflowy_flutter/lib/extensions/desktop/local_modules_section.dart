@@ -4,6 +4,7 @@ import 'package:app_containers/app_containers.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/desktop/local_nav_rail.dart';
+import 'package:appflowy/extensions/local_home/mobile_theme.dart';
 import 'package:appflowy/extensions/local_home/local_home_shell.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
@@ -71,6 +72,8 @@ class _LocalModulesSectionState extends State<LocalModulesSection> {
         _initialized = false; // 工作区还没就绪，下次重建时再试
         return;
       }
+      // 桌面上也把用户选过的配色读进来（与手机同一份偏好）
+      unawaited(MobThemeController.load());
       final repository = ContainerRepositoryImpl(
         workspaceId: workspaceId,
         userId: widget.userProfile.id,

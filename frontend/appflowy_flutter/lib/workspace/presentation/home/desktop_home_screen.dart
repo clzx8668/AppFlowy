@@ -1,5 +1,6 @@
 import 'package:appflowy/features/workspace/data/repositories/rust_workspace_repository_impl.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/extensions/local_home/mobile_theme.dart';
 import 'package:appflowy/extensions/desktop/local_nav_rail.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
