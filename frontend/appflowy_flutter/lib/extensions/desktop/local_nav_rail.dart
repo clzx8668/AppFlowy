@@ -17,6 +17,9 @@ import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
+import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
+import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
@@ -100,6 +103,8 @@ class LocalNavRail extends StatelessWidget {
                 children: [
                   // 固定项（与展开态侧栏顶部一一对应）：我 / 设置 / 通知
                   _RailHeaderItems(),
+                  // 与展开态侧栏「新页面」一行对应
+                  const _RailNewPageIcon(),
                   for (final item in items)
                     _RailIcon(
                       icon: item.icon,
@@ -475,6 +480,45 @@ class _RailChildIcon extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 「新页面」：复用上游侧栏 `SidebarNewPageButton` 里那套创建逻辑（不改行为），只换成图标。
+class _RailNewPageIcon extends StatelessWidget {
+  const _RailNewPageIcon();
+
+  Future<void> _createNewPage(BuildContext context) async {
+    final section = context.read<UserWorkspaceBloc>().state.isCollabWorkspaceOn
+        ? ViewSectionPB.Private
+        : ViewSectionPB.Public;
+    final spaceState = context.read<SpaceBloc>().state;
+    if (spaceState.spaces.isNotEmpty) {
+      context.read<SpaceBloc>().add(
+            const SpaceEvent.createPage(
+              name: '',
+              index: 0,
+              layout: ViewLayoutPB.Document,
+              openAfterCreate: true,
+            ),
+          );
+    } else {
+      context.read<SidebarSectionsBloc>().add(
+            SidebarSectionsEvent.createRootViewInSection(
+              name: '',
+              viewSection: section,
+              index: 0,
+            ),
+          );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _RailChildIcon(
+      tooltip: '新页面',
+      onTap: () => unawaited(_createNewPage(context)),
+      child: const Icon(Icons.add, size: 20),
     );
   }
 }
