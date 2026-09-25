@@ -15,6 +15,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
+import 'package:appflowy/startup/plugin/plugin.dart';
+import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
@@ -111,6 +113,27 @@ class LocalNavRail extends StatelessWidget {
               ),
             ),
           ),
+          // 固定项（与展开态侧栏底部对应）：回收站
+          Divider(
+            height: 9,
+            thickness: 0.5,
+            indent: 12,
+            endIndent: 12,
+            color: theme.colorScheme.outlineVariant,
+          ),
+          _RailChildIcon(
+            tooltip: '回收站',
+            onTap: () {
+              getIt<MenuSharedState>().latestOpenView = null;
+              getIt<TabsBloc>().add(
+                TabsEvent.openPlugin(
+                  plugin: makePlugin(pluginType: PluginType.trash),
+                ),
+              );
+            },
+            child: const Icon(Icons.delete_outline, size: 20),
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
