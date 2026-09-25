@@ -26,6 +26,9 @@ const String kCrmFieldDefTable = 'crm_field_defs';
 /// - 收款 → 合同：`receivable.contract_id`
 const String kCrmRelationTable = 'crm_relations';
 
+/// 预置字段的种入标记表（只种一次，用户改名/删除后不会被重新加回来）。
+const String kCrmSeedTable = 'crm_seed_state';
+
 const List<BusinessMigration> kCrmV2Migrations = [
   BusinessMigration('crm', 2, [
     '''
@@ -104,6 +107,15 @@ const List<BusinessMigration> kCrmV2Migrations = [
     'CREATE INDEX IF NOT EXISTS idx_crm_relations_to '
         'ON $kCrmRelationTable (to_type, to_id);',
     'ALTER TABLE $kCrmEntityTable ADD COLUMN contract_id TEXT NOT NULL DEFAULT "";',
+  ]),
+  // v4：预置字段种入标记
+  BusinessMigration('crm', 4, [
+    '''
+    CREATE TABLE IF NOT EXISTS $kCrmSeedTable (
+      key TEXT PRIMARY KEY,
+      seeded_at INTEGER NOT NULL
+    );
+    ''',
   ]),
 ];
 
@@ -435,6 +447,33 @@ class CrmEntityRepository {
   }
 
   // ------------------------------------------------------------ 映射
+
+  /// 首次运行时把**预置字段**种入字段定义表（每类实体一次，幂等）。
+  ///
+  /// 用标记表保证：只种一次 —— 用户之后改名/删掉的字段不会被"复活"。
+  Future<void> seedPresetFields() async {
+    for (final type in CrmEntityType.all) {
+      final presets = presetFieldsOf(type);
+      if (presets.isEmpty) {
+        continue;
+      }
+      final key = 'preset_fields_$type';
+      final done = _db.raw.select(
+        'SELECT key FROM $kCrmSeedTable WHERE key = ?;',
+        [key],
+      );
+      if (done.isNotEmpty) {
+        continue;
+      }
+      for (final def in presets) {
+        await upsertFieldDef(def);
+      }
+      _db.raw.execute(
+        'INSERT OR REPLACE INTO $kCrmSeedTable (key, seeded_at) VALUES (?, ?);',
+        [key, DateTime.now().millisecondsSinceEpoch],
+      );
+    }
+  }
 
   CrmEntity _fromRow(Row row) {
     Map<String, String> extra = const {};

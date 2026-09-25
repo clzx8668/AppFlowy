@@ -208,3 +208,316 @@ class CrmFieldDef {
   final List<String> options;
   final int sortOrder;
 }
+
+/// **预置字段**：按"常见 CRM 该有的字段"给每类实体一套，安装时自动种入
+/// `crm_field_defs`。全部**非必填**，字段值存在实体自己的 `extra` 里；
+/// 用户可以改名/删除，也可以再往下加自己的字段（都不改数据库结构）。
+///
+/// 设计原则：
+/// - 只放"平时真的会用"的字段（不求大而全）；
+/// - 已作为核心列存在的（标题/阶段/金额/关键日期/备注/客户/项目外键）不在这里重复，
+///   避免同一个信息出现两处；
+/// - 能枚举的尽量做成 `select`（手机上点一下比打字快），其余是 text / number / date。
+const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
+  CrmEntityType.lead: [
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'source',
+      label: '来源',
+      type: 'select',
+      options: ['展会', '转介绍', '网络推广', '电话咨询', '老客户', '其他'],
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'intent_company',
+      label: '意向单位',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'contact_name',
+      label: '对接人',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'phone',
+      label: '电话',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'wechat',
+      label: '微信',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'priority',
+      label: '优先级',
+      type: 'select',
+      options: ['高', '中', '低'],
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'expected_amount',
+      label: '预计金额（元）',
+      type: 'number',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'expected_date',
+      label: '预计成交日期',
+      type: 'date',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'region',
+      label: '地区',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.lead,
+      key: 'close_reason',
+      label: '关闭原因',
+      type: 'select',
+      options: ['价格', '工期', '资质', '竞品', '无预算', '其他'],
+    ),
+  ],
+  CrmEntityType.customer: [
+    CrmFieldDef(
+      entityType: CrmEntityType.customer,
+      key: 'industry',
+      label: '行业',
+      type: 'select',
+      options: ['市政', '水务', '化工', '制药', '食品', '电力', '其他'],
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.customer,
+      key: 'level',
+      label: '客户等级',
+      type: 'select',
+      options: ['A 重点', 'B 一般', 'C 潜在'],
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.customer,
+      key: 'region',
+      label: '地区',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.customer,
+      key: 'phone',
+      label: '总机/电话',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.customer,
+      key: 'address',
+      label: '地址',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.customer,
+      key: 'tax_no',
+      label: '纳税人识别号',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.customer,
+      key: 'invoice_info',
+      label: '开票信息',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.customer,
+      key: 'source',
+      label: '客户来源',
+      type: 'select',
+      options: ['展会', '转介绍', '网络', '老客户', '其他'],
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.customer,
+      key: 'payment_terms',
+      label: '付款习惯',
+      type: 'text',
+    ),
+  ],
+  CrmEntityType.contact: [
+    CrmFieldDef(
+      entityType: CrmEntityType.contact,
+      key: 'job_title',
+      label: '职务',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contact,
+      key: 'phone',
+      label: '电话',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contact,
+      key: 'mobile',
+      label: '手机',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contact,
+      key: 'wechat',
+      label: '微信',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contact,
+      key: 'email',
+      label: '邮箱',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contact,
+      key: 'role',
+      label: '决策角色',
+      type: 'select',
+      options: ['决策人', '使用人', '影响者', '采购', '财务'],
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contact,
+      key: 'birthday',
+      label: '生日',
+      type: 'date',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contact,
+      key: 'hobby',
+      label: '爱好',
+      type: 'text',
+    ),
+  ],
+  CrmEntityType.project: [
+    CrmFieldDef(
+      entityType: CrmEntityType.project,
+      key: 'region',
+      label: '项目地点',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.project,
+      key: 'scale',
+      label: '规模/处理量',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.project,
+      key: 'win_rate',
+      label: '赢率（%）',
+      type: 'number',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.project,
+      key: 'bid_date',
+      label: '投标日期',
+      type: 'date',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.project,
+      key: 'delivery_date',
+      label: '期望交付日期',
+      type: 'date',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.project,
+      key: 'competitor',
+      label: '竞品情况',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.project,
+      key: 'strategy',
+      label: '跟进策略',
+      type: 'text',
+    ),
+  ],
+  CrmEntityType.contract: [
+    CrmFieldDef(
+      entityType: CrmEntityType.contract,
+      key: 'contract_no',
+      label: '合同编号',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contract,
+      key: 'effective_date',
+      label: '生效日期',
+      type: 'date',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contract,
+      key: 'expire_date',
+      label: '到期日期',
+      type: 'date',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contract,
+      key: 'payment_terms',
+      label: '付款方式',
+      type: 'select',
+      options: ['预付', '进度款', '到货款', '验收款', '质保金'],
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contract,
+      key: 'warranty',
+      label: '质保期',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contract,
+      key: 'invoice_type',
+      label: '发票类型',
+      type: 'select',
+      options: ['专票 13%', '专票 6%', '普票'],
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.contract,
+      key: 'our_signer',
+      label: '我方签约主体',
+      type: 'text',
+    ),
+  ],
+  CrmEntityType.receivable: [
+    CrmFieldDef(
+      entityType: CrmEntityType.receivable,
+      key: 'received',
+      label: '已收金额（元）',
+      type: 'number',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.receivable,
+      key: 'method',
+      label: '收款方式',
+      type: 'select',
+      options: ['银行转账', '承兑', '现金', '其他'],
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.receivable,
+      key: 'invoice_no',
+      label: '发票号',
+      type: 'text',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.receivable,
+      key: 'invoice_date',
+      label: '开票日期',
+      type: 'date',
+    ),
+    CrmFieldDef(
+      entityType: CrmEntityType.receivable,
+      key: 'invoice_amount',
+      label: '开票金额（元）',
+      type: 'number',
+    ),
+  ],
+};
+
+/// 取某类实体的预置字段。
+List<CrmFieldDef> presetFieldsOf(String type) => kCrmPresetFields[type] ?? const [];

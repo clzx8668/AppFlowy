@@ -528,17 +528,7 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                               ),
                       ),
                       // 负责人：个人使用场景默认隐藏（数据库列保留，便于将来多人协作）
-                      _fieldRow(
-                        theme,
-                        '电话',
-                        entity.phone,
-                        () => _editText(
-                          label: '电话',
-                          current: entity.phone,
-                          keyboardType: TextInputType.phone,
-                          apply: (c, v) => c.copyWith(phone: v),
-                        ),
-                      ),
+                      // 电话已作为「预置字段」放在下方字段区（非必填）
                       _fieldRow(
                         theme,
                         '金额',
@@ -677,15 +667,9 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
                         for (final def in _fieldDefs)
                           _fieldRow(
                             theme,
-                            def.label.isEmpty ? def.key : def.label,
+                            _fieldLabel(def),
                             entity.extra[def.key] ?? '',
-                            () => _editText(
-                              label: def.label.isEmpty ? def.key : def.label,
-                              current: entity.extra[def.key] ?? '',
-                              apply: (c, v) => c.copyWith(
-                                extra: {...c.extra, def.key: v},
-                              ),
-                            ),
+                            () => _editFieldValue(entity, def),
                           ),
                     ],
                   ),
@@ -797,6 +781,89 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
   }
 
   // ------------------------------------------------------------ 关联区块
+
+  String _fieldLabel(CrmFieldDef def) =>
+      def.label.isEmpty ? def.key : def.label;
+
+  /// 按字段类型编辑值：文本/数字走输入框，日期走日期选择器，单选走选项 chips。
+  Future<void> _editFieldValue(CrmEntity entity, CrmFieldDef def) async {
+    final current = entity.extra[def.key] ?? '';
+    switch (def.type) {
+      case 'date':
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: DateTime.tryParse(current) ?? DateTime.now(),
+          firstDate: DateTime(2000),
+          lastDate: DateTime(2100),
+        );
+        if (picked == null) {
+          return;
+        }
+        String two(int v) => v.toString().padLeft(2, '0');
+        await _save(
+          entity.copyWith(
+            extra: {
+              ...entity.extra,
+              def.key: '${picked.year}-${two(picked.month)}-${two(picked.day)}',
+            },
+          ),
+        );
+      case 'select':
+        final options = def.options.isEmpty ? const ['是', '否'] : def.options;
+        final picked = await showModalBottomSheet<String>(
+          context: context,
+          showDragHandle: true,
+          builder: (sheetContext) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _fieldLabel(def),
+                    style: Theme.of(sheetContext).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final option in options)
+                        ChoiceChip(
+                          label: Text(option),
+                          selected: current == option,
+                          onSelected: (_) =>
+                              Navigator.of(sheetContext).pop(option),
+                        ),
+                      ActionChip(
+                        avatar: const Icon(Icons.close, size: 16),
+                        label: const Text('清空'),
+                        onPressed: () => Navigator.of(sheetContext).pop(''),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        if (picked == null) {
+          return;
+        }
+        await _save(
+          entity.copyWith(extra: {...entity.extra, def.key: picked}),
+        );
+      default:
+        await _editText(
+          label: _fieldLabel(def),
+          current: current,
+          keyboardType:
+              def.type == 'number' ? TextInputType.number : TextInputType.text,
+          apply: (c, v) => c.copyWith(extra: {...c.extra, def.key: v}),
+        );
+    }
+  }
 
   /// 关联卡片：按实体类型给出该有的关联入口。
   ///

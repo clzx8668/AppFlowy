@@ -58,6 +58,8 @@ class _CrmHomePageState extends State<CrmHomePage>
       }
       setState(() => _repository = repository);
       await _migrateLegacyCustomers(database, repository);
+      // 种入各类实体的预置字段（只种一次；用户可改名/删除/继续添加）
+      await repository.seedPresetFields();
       await _reload();
     } catch (e) {
       Log.error('[CRM] 初始化失败：$e');
@@ -388,10 +390,6 @@ Future<CrmEntity?> showCrmEntitySheet({
   final withAmount = type == CrmEntityType.project ||
       type == CrmEntityType.contract ||
       type == CrmEntityType.receivable;
-  final withPhone = type == CrmEntityType.lead ||
-      type == CrmEntityType.customer ||
-      type == CrmEntityType.contact;
-
   final saved = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
@@ -440,14 +438,7 @@ Future<CrmEntity?> showCrmEntitySheet({
                   },
                 ),
               ),
-              if (withPhone) ...[
-                const SizedBox(height: 10),
-                TextField(
-                  controller: phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: '电话'),
-                ),
-              ],
+              // 电话等常见字段已作为「预置字段」放在详情里（非必填）
               if (withAmount) ...[
                 const SizedBox(height: 10),
                 TextField(
