@@ -197,16 +197,24 @@ class CrmFieldDef {
     this.type = 'text',
     this.options = const [],
     this.sortOrder = 0,
+    this.unit = '',
+    this.maxLength,
   });
 
   final String entityType;
   final String key;
   final String label;
 
-  /// text / number / date / select / checkbox
+  /// text / number / date / datetime / phone / email / select / checkbox
   final String type;
   final List<String> options;
   final int sortOrder;
+
+  /// 右侧常驻单位（如 元 / % / 月），留空则不显示。
+  final String unit;
+
+  /// 字数上限（有值时输入框右侧显示 `已输入/上限`，浅色）。
+  final int? maxLength;
 }
 
 /// **预置字段**：按"常见 CRM 该有的字段"给每类实体一套，安装时自动种入
@@ -243,7 +251,7 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
       entityType: CrmEntityType.lead,
       key: 'phone',
       label: '电话',
-      type: 'text',
+      type: 'phone',
     ),
     CrmFieldDef(
       entityType: CrmEntityType.lead,
@@ -263,6 +271,7 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
       key: 'expected_amount',
       label: '预计金额（元）',
       type: 'number',
+      unit: '元',
     ),
     CrmFieldDef(
       entityType: CrmEntityType.lead,
@@ -309,19 +318,21 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
       entityType: CrmEntityType.customer,
       key: 'phone',
       label: '总机/电话',
-      type: 'text',
+      type: 'phone',
     ),
     CrmFieldDef(
       entityType: CrmEntityType.customer,
       key: 'address',
       label: '地址',
       type: 'text',
+      maxLength: 80,
     ),
     CrmFieldDef(
       entityType: CrmEntityType.customer,
       key: 'tax_no',
       label: '纳税人识别号',
       type: 'text',
+      maxLength: 20,
     ),
     CrmFieldDef(
       entityType: CrmEntityType.customer,
@@ -354,13 +365,13 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
       entityType: CrmEntityType.contact,
       key: 'phone',
       label: '电话',
-      type: 'text',
+      type: 'phone',
     ),
     CrmFieldDef(
       entityType: CrmEntityType.contact,
       key: 'mobile',
       label: '手机',
-      type: 'text',
+      type: 'phone',
     ),
     CrmFieldDef(
       entityType: CrmEntityType.contact,
@@ -372,7 +383,7 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
       entityType: CrmEntityType.contact,
       key: 'email',
       label: '邮箱',
-      type: 'text',
+      type: 'email',
     ),
     CrmFieldDef(
       entityType: CrmEntityType.contact,
@@ -412,6 +423,7 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
       key: 'win_rate',
       label: '赢率（%）',
       type: 'number',
+      unit: '%',
     ),
     CrmFieldDef(
       entityType: CrmEntityType.project,
@@ -469,6 +481,7 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
       key: 'warranty',
       label: '质保期',
       type: 'text',
+      unit: '月',
     ),
     CrmFieldDef(
       entityType: CrmEntityType.contract,
@@ -490,6 +503,7 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
       key: 'received',
       label: '已收金额（元）',
       type: 'number',
+      unit: '元',
     ),
     CrmFieldDef(
       entityType: CrmEntityType.receivable,
@@ -515,6 +529,7 @@ const Map<String, List<CrmFieldDef>> kCrmPresetFields = {
       key: 'invoice_amount',
       label: '开票金额（元）',
       type: 'number',
+      unit: '元',
     ),
   ],
 };

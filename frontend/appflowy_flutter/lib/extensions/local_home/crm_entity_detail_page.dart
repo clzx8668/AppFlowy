@@ -5,6 +5,7 @@ import 'package:app_ai_ext/app_ai_ext.dart';
 import 'package:appflowy/extensions/ai_entry.dart';
 import 'package:appflowy/extensions/flash_note_entry.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
+import 'package:appflowy/extensions/local_home/crm_field_inputs.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -925,22 +926,49 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
     final current = entity.extra[def.key] ?? '';
     switch (def.type) {
       case 'date':
-        final picked = await showDatePicker(
+      case 'datetime':
+        final withTime = def.type == 'datetime';
+        await showModalBottomSheet<void>(
           context: context,
-          initialDate: DateTime.tryParse(current) ?? DateTime.now(),
-          firstDate: DateTime(2000),
-          lastDate: DateTime(2100),
-        );
-        if (picked == null) {
-          return;
-        }
-        String two(int v) => v.toString().padLeft(2, '0');
-        await _save(
-          entity.copyWith(
-            extra: {
-              ...entity.extra,
-              def.key: '${picked.year}-${two(picked.month)}-${two(picked.day)}',
-            },
+          showDragHandle: true,
+          builder: (sheetContext) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _fieldLabel(def),
+                    style: Theme.of(sheetContext).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  CrmDateField(
+                    label: _fieldLabel(def),
+                    withTime: withTime,
+                    value: parseCrmDate(current),
+                    onPick: (picked) {
+                      Navigator.of(sheetContext).pop();
+                      if (picked != null) {
+                        unawaited(
+                          _save(
+                            entity.copyWith(
+                              extra: {
+                                ...entity.extra,
+                                def.key: formatCrmDate(
+                                  picked,
+                                  withTime: withTime,
+                                ),
+                              },
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       case 'select':
@@ -990,12 +1018,85 @@ class _CrmEntityDetailPageState extends State<CrmEntityDetailPage> {
           entity.copyWith(extra: {...entity.extra, def.key: picked}),
         );
       default:
-        await _editText(
+        // 文本 / 数字 / 电话 / 邮箱：用**带格式的输入框**（右侧常驻单位与字数，浅色）
+        final controller = TextEditingController(text: current);
+        final saved = await showModalBottomSheet<bool>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          builder: (sheetContext) => Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _fieldLabel(def),
+                  style: Theme.of(sheetContext).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                _typedInput(controller, def, autofocus: true),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(true),
+                    child: const Text('保存'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (saved != true) {
+          return;
+        }
+        await _save(
+          entity.copyWith(
+            extra: {...entity.extra, def.key: controller.text.trim()},
+          ),
+        );
+    }
+  }
+
+  /// 按字段类型选择输入控件（电话分组、邮箱校验、数字带单位与字数）。
+  Widget _typedInput(
+    TextEditingController controller,
+    CrmFieldDef def, {
+    bool autofocus = false,
+  }) {
+    switch (def.type) {
+      case 'phone':
+        return CrmPhoneField(
+          controller: controller,
           label: _fieldLabel(def),
-          current: current,
-          keyboardType:
-              def.type == 'number' ? TextInputType.number : TextInputType.text,
-          apply: (c, v) => c.copyWith(extra: {...c.extra, def.key: v}),
+          autofocus: autofocus,
+        );
+      case 'email':
+        return CrmEmailField(
+          controller: controller,
+          label: _fieldLabel(def),
+          autofocus: autofocus,
+        );
+      case 'number':
+        return CrmTextField(
+          controller: controller,
+          label: _fieldLabel(def),
+          unit: def.unit.isEmpty ? null : def.unit,
+          numeric: true,
+          autofocus: autofocus,
+        );
+      default:
+        return CrmTextField(
+          controller: controller,
+          label: _fieldLabel(def),
+          unit: def.unit.isEmpty ? null : def.unit,
+          maxLength: def.maxLength,
+          autofocus: autofocus,
         );
     }
   }

@@ -5,6 +5,7 @@ import 'package:app_crm_biz/app_crm_biz.dart';
 import 'package:appflowy/extensions/local_home/mobile_ui_kit.dart';
 import 'package:appflowy/extensions/local_home/mob_sliding_tabs.dart';
 import 'package:appflowy/extensions/local_home/crm_entity_detail_page.dart';
+import 'package:appflowy/extensions/local_home/crm_field_inputs.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
@@ -390,6 +391,17 @@ Future<CrmEntity?> showCrmEntitySheet({
   final withAmount = type == CrmEntityType.project ||
       type == CrmEntityType.contract ||
       type == CrmEntityType.receivable;
+  // 预置字段（可选填）：文本/数字/电话/邮箱用输入框，日期用分段日期框，单选用 chips
+  final presetDefs = presetFieldsOf(type);
+  final presetControllers = <String, TextEditingController>{
+    for (final def in presetDefs)
+      if (def.type != 'date' &&
+          def.type != 'datetime' &&
+          def.type != 'select')
+        def.key: TextEditingController(),
+  };
+  final presetDates = <String, DateTime?>{};
+  final presetSelects = <String, String>{};
   final saved = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
@@ -493,6 +505,73 @@ Future<CrmEntity?> showCrmEntitySheet({
                 maxLines: 3,
                 decoration: const InputDecoration(labelText: '备注'),
               ),
+              if (presetDefs.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  '更多字段（可选填）',
+                  style: Theme.of(sheetContext).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(sheetContext).colorScheme.outline,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                for (final def in presetDefs) ...[
+                  if (def.type == 'date' || def.type == 'datetime')
+                    CrmDateField(
+                      label: def.label.isEmpty ? def.key : def.label,
+                      withTime: def.type == 'datetime',
+                      value: presetDates[def.key],
+                      onPick: (picked) =>
+                          setSheetState(() => presetDates[def.key] = picked),
+                    )
+                  else if (def.type == 'select')
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          def.label.isEmpty ? def.key : def.label,
+                          style: Theme.of(sheetContext).textTheme.labelSmall
+                              ?.copyWith(
+                            color: Theme.of(sheetContext).colorScheme.outline,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final option in def.options)
+                              ChoiceChip(
+                                label: Text(option),
+                                selected: presetSelects[def.key] == option,
+                                onSelected: (_) => setSheetState(
+                                  () => presetSelects[def.key] = option,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    )
+                  else if (def.type == 'phone')
+                    CrmPhoneField(
+                      controller: presetControllers[def.key]!,
+                      label: def.label.isEmpty ? def.key : def.label,
+                    )
+                  else if (def.type == 'email')
+                    CrmEmailField(
+                      controller: presetControllers[def.key]!,
+                      label: def.label.isEmpty ? def.key : def.label,
+                    )
+                  else
+                    CrmTextField(
+                      controller: presetControllers[def.key]!,
+                      label: def.label.isEmpty ? def.key : def.label,
+                      unit: def.unit.isEmpty ? null : def.unit,
+                      maxLength: def.maxLength,
+                      numeric: def.type == 'number',
+                    ),
+                  const SizedBox(height: 10),
+                ],
+              ],
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -520,5 +599,21 @@ Future<CrmEntity?> showCrmEntitySheet({
     phone: phoneController.text.trim(),
     note: noteController.text.trim(),
     eventTime: eventTime,
+    // 预置字段值（可选）：文本/数字/电话/邮箱 + 日期 + 单选
+    extra: {
+      for (final entry in presetControllers.entries)
+        if (entry.value.text.trim().isNotEmpty)
+          entry.key: entry.value.text.trim(),
+      for (final entry in presetDates.entries)
+        if (entry.value != null)
+          entry.key: formatCrmDate(
+            entry.value!,
+            withTime:
+                presetDefs.firstWhere((d) => d.key == entry.key).type ==
+                    'datetime',
+          ),
+      for (final entry in presetSelects.entries)
+        if (entry.value.isNotEmpty) entry.key: entry.value,
+    },
   );
 }

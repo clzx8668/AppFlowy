@@ -181,6 +181,7 @@ class CrmEntityRepository {
     String contactId = '',
     String projectId = '',
     String leadId = '',
+    Map<String, String> extra = const {},
   }) {
     final now = DateTime.now();
     return create(
@@ -199,6 +200,7 @@ class CrmEntityRepository {
         contactId: contactId,
         projectId: projectId,
         leadId: leadId,
+        extra: extra,
         createdAt: now,
         updatedAt: now,
       ),
