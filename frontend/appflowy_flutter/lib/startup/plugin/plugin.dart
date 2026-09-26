@@ -19,6 +19,8 @@ enum PluginType {
   calendar,
   databaseDocument,
   chat,
+  // 二次开发：本地模块插件
+  localRecords,
 }
 
 typedef PluginId = String;
