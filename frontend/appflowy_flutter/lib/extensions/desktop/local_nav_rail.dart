@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:appflowy/extensions/desktop/local_plugins.dart';
 
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/desktop/local_plugins.dart';

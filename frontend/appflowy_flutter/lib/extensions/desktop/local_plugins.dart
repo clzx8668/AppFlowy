@@ -3,6 +3,8 @@ import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
+import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_stack.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pbenum.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -84,4 +86,11 @@ class LocalRecordsWidgetBuilder extends PluginWidgetBuilder
 
   @override
   List<NavigationItem> get navigationItems => [this];
+}
+
+/// 在内容区以**上游标签页**方式打开本地模块（与打开文档、打开回收站同一条路）。
+void openLocalModuleTab(PluginType type) {
+  getIt<TabsBloc>().add(
+    TabsEvent.openPlugin(plugin: makePlugin(pluginType: type)),
+  );
 }
