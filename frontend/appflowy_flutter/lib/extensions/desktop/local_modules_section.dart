@@ -4,6 +4,8 @@ import 'package:app_containers/app_containers.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/desktop/local_nav_rail.dart';
+import 'package:appflowy/extensions/desktop/local_plugins.dart';
+import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/extensions/local_home/mobile_theme.dart';
 import 'package:appflowy/extensions/local_home/local_home_shell.dart';
 import 'package:appflowy/extensions/local_home/records_feed_page.dart';
@@ -74,6 +76,11 @@ class _LocalModulesSectionState extends State<LocalModulesSection> {
       }
       // 桌面上也把用户选过的配色读进来（与手机同一份偏好）
       unawaited(MobThemeController.load());
+      // 注册本地模块插件（幂等）：注册后才能用 openPlugin 开成内容区标签页
+      registerPlugin(
+        builder: LocalRecordsPluginBuilder(),
+        config: LocalModulePluginConfig(),
+      );
       final repository = ContainerRepositoryImpl(
         workspaceId: workspaceId,
         userId: widget.userProfile.id,
