@@ -36,7 +36,13 @@ final GlobalKey<NavigatorState> localContentViewKey =
 
 /// 在内容区打开一个本地模块页（拿不到 Navigator 时退化为普通路由）。
 void openLocalModulePage(BuildContext context, Widget page) {
-  // 沿用上游原有模式：普通路由打开（内部页渲染方式不变）
+  // 桌面端**在内容区（主框架内）渲染**：push 到内容区自带的那层 Navigator，
+  // 侧栏与多标签区不动，返回栈只影响内容区。
+  final navigator = localContentViewKey.currentState;
+  if (navigator != null) {
+    navigator.push(MaterialPageRoute(builder: (_) => page));
+    return;
+  }
   Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 }
 
