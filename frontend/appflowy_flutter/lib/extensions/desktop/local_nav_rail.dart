@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
+import 'package:appflowy/extensions/desktop/local_plugins.dart';
 import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
 import 'package:appflowy/extensions/local_home/local_home_shell.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
@@ -264,15 +265,8 @@ List<LocalNavItem> localNavItems({
     LocalNavItem(
       icon: FlowySvgs.document_s,
       label: '记录流（首页）',
-      open: (context) => push(
-        context,
-        RecordsFeedPage(
-          repository: ContainerRepositoryImpl(
-            workspaceId: workspaceId,
-            userId: userId,
-          ),
-        ),
-      ),
+      // 以上游标签页方式打开（与打开文档一致）
+      open: (context) => openLocalModuleTab(PluginType.localRecords),
     ),
     LocalNavItem(
       icon: FlowySvgs.calendar_s,
