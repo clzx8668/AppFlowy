@@ -3,12 +3,7 @@ import 'dart:async';
 import 'package:app_containers/app_containers.dart';
 import 'package:appflowy/extensions/adapters/container_repository_impl.dart';
 import 'package:appflowy/extensions/kb_links/kb_links_settings_page.dart';
-import 'package:appflowy/extensions/desktop/local_nav_rail.dart';
-import 'package:appflowy/extensions/desktop/local_plugins.dart';
-import 'package:appflowy/startup/plugin/plugin.dart';
-import 'package:appflowy/extensions/local_home/mobile_theme.dart';
 import 'package:appflowy/extensions/local_home/local_home_shell.dart';
-import 'package:appflowy/extensions/local_home/records_feed_page.dart';
 import 'package:appflowy/extensions/local_home/webdav_settings_page.dart';
 import 'package:appflowy/extensions/timeline_entry.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
@@ -74,13 +69,6 @@ class _LocalModulesSectionState extends State<LocalModulesSection> {
         _initialized = false; // 工作区还没就绪，下次重建时再试
         return;
       }
-      // 桌面上也把用户选过的配色读进来（与手机同一份偏好）
-      unawaited(MobThemeController.load());
-      // 注册本地模块插件（幂等）：注册后才能用 openPlugin 开成内容区标签页
-      registerPlugin(
-        builder: LocalRecordsPluginBuilder(),
-        config: LocalModulePluginConfig(),
-      );
       final repository = ContainerRepositoryImpl(
         workspaceId: workspaceId,
         userId: widget.userProfile.id,
@@ -106,8 +94,9 @@ class _LocalModulesSectionState extends State<LocalModulesSection> {
             '';
 
     void open(Widget page) {
-      // 在主框架的内容区里渲染（侧栏不动；内容区自带返回）
-      openLocalModulePage(context, page);
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => page),
+      );
     }
 
     return SizedBox(
@@ -125,25 +114,12 @@ class _LocalModulesSectionState extends State<LocalModulesSection> {
           ),
           _entry(
             context,
-            icon: FlowySvgs.document_s,
-            label: '记录流（首页）',
-            onTap: () => open(
-              RecordsFeedPage(
-                repository: ContainerRepositoryImpl(
-                  workspaceId: workspaceId,
-                  userId: widget.userProfile.id,
-                ),
-              ),
-            ),
-          ),
-          _entry(
-            context,
             icon: FlowySvgs.calendar_s,
             label: '日历 · 日记',
             onTap: () => open(
-              CalendarView(
-                workspaceId: workspaceId,
-                userId: widget.userProfile.id,
+          CalendarView(
+              workspaceId: workspaceId,
+              userId: widget.userProfile.id,
               ),
             ),
           ),
