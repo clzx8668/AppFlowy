@@ -120,7 +120,11 @@ class LocalNavRail extends StatelessWidget {
                     _RailIcon(
                       icon: item.icon,
                       tooltip: item.label,
-                      onTap: () => item.open(context),
+                      onTap: () {
+                        // 折叠态点图标：先展开侧栏（快速选择），再打开对应模块页
+                        onToggleMenu();
+                        item.open(context);
+                      },
                     ),
                   // A 方案第 2 部分：**动态一级页面**（"个人的"下的顶层视图），
                   // 与展开态侧栏读同一个数据源，点击用上游原有方式打开（打开为内容区页面）。
